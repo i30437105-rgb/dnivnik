@@ -33,7 +33,14 @@ async function bybitGet(path: string, params: Record<string, string>) {
   return j.result;
 }
 
-Deno.serve(async () => {
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const sb = createClient(
       Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SB_URL")!,
@@ -81,12 +88,12 @@ Deno.serve(async () => {
     }
 
     return new Response(JSON.stringify({ ok: true, equity, saved, todayPnl }), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json", ...CORS },
     });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), {
       status: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json", ...CORS },
     });
   }
 });

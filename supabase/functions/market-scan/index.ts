@@ -36,7 +36,14 @@ async function pool<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>): P
   return out;
 }
 
-Deno.serve(async () => {
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const t0 = Date.now();
     // Инструменты (с пагинацией) + тикеры + анонсы
@@ -149,9 +156,9 @@ td{padding:7px 10px;border-bottom:1px solid #1e222d}tr:hover td{background:#1e22
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     await sb.from("scan_reports").upsert({ id: 1, html, updated_at: new Date().toISOString() });
     return new Response(JSON.stringify({ ok: true, listings: listings.length, movers: topM.length, ranges: topR.length, sec: (Date.now()-t0)/1000 }),
-      { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      { headers: { "Content-Type": "application/json", ...CORS } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      { status: 500, headers: { "Content-Type": "application/json", ...CORS } });
   }
 });
