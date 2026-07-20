@@ -9,31 +9,45 @@
 :root{--bg:#131722;--card:#1e222d;--line:#2a2e39;--txt:#d1d4dc;--dim:#787b86;--g:#26a69a;--r:#ef5350;--y:#f5d90a}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',sans-serif;margin:0;padding:16px;max-width:1000px;margin:auto}
-h1{font-size:20px;color:#fff;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:20px;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 h2{font-size:15px;color:#fff;margin:22px 0 8px}
 .card{background:var(--card);border-radius:12px;padding:16px;margin-top:12px}
 button{background:#2962ff;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer}
 button.sec{background:var(--line)}
+.tabs{display:flex;gap:6px;margin-top:14px;border-bottom:1px solid var(--line)}
+.tab{background:none;color:var(--dim);border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 18px;font-size:15px}
+.tab.on{color:#fff;border-bottom-color:#2962ff}
 input,select,textarea{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;width:100%}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
 th{text-align:left;color:var(--dim);padding:5px 8px;border-bottom:1px solid var(--line);font-weight:600}
 td{padding:6px 8px;border-bottom:1px solid var(--line)}
 .g{color:var(--g)}.r{color:var(--r)}.y{color:var(--y)}.dim{color:var(--dim);font-size:12px}
-.bar{height:14px;background:var(--line);border-radius:7px;overflow:hidden;position:relative;margin-top:8px}
-.bar>div{height:100%;border-radius:7px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.bar{height:16px;background:var(--line);border-radius:8px;overflow:hidden;margin-top:10px}
+.bar>div{height:100%;border-radius:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
 .stat{background:var(--bg);border-radius:10px;padding:10px 12px}
-.stat b{font-size:18px;display:block}
+.stat b{font-size:18px;display:block;margin-top:2px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:12px;max-width:480px;width:92%}
 dialog::backdrop{background:rgba(0,0,0,.6)}
 img.thumb{max-height:40px;border-radius:4px;cursor:pointer}
 #login{max-width:340px;margin:80px auto}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px}
+.cal .hd{color:var(--dim);font-size:12px;text-align:center}
+.day{background:var(--bg);border-radius:8px;min-height:52px;padding:5px 7px;font-size:12px;border:1px solid var(--line)}
+.day .n{color:var(--dim)}
+.day.hit{background:rgba(38,166,154,.18);border-color:var(--g)}
+.day.miss{background:rgba(245,217,10,.10);border-color:#8a7a1a}
+.day.stopd{background:rgba(239,83,80,.15);border-color:var(--r)}
+.day.today{outline:2px solid #2962ff}
+.day .v{display:block;font-weight:600;margin-top:3px}
+iframe{width:100%;height:calc(100vh - 160px);border:0;border-radius:12px;background:#fff0}
+.legend span{margin-right:14px;font-size:12px;color:var(--dim)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 </style>
 </head>
 <body>
 <script>
-// ═══ НАСТРОЙКА (заполнить после создания проекта Supabase) ═══
 const SUPABASE_URL = "https://wfsetzedmhvedjsuylak.supabase.co";
 const SUPABASE_ANON = "sb_publishable_nuu2INDaUiHwhaYod4VLvw_WWG19_99";
 const SYNC_URL = SUPABASE_URL + "/functions/v1/bybit-sync";
@@ -50,25 +64,50 @@ const SYNC_URL = SUPABASE_URL + "/functions/v1/bybit-sync";
 </div>
 
 <div id="app" style="display:none">
-  <h1>📒 Дневник трейдера
+  <h1>📒 Торговая система
     <span class="row">
       <button onclick="doSync()" id="syncBtn">⟳ Синк с Bybit</button>
       <button class="sec" onclick="sb.auth.signOut().then(()=>location.reload())">Выйти</button>
     </span>
   </h1>
 
-  <div class="card" id="dayCard">Загрузка…</div>
-
-  <h2>📊 Статистика (30 дней)</h2>
-  <div class="card"><div class="grid" id="stats"></div>
-    <div class="row" style="margin-top:14px;gap:24px;align-items:flex-start">
-      <div style="flex:1;min-width:220px"><b class="dim">По монетам</b><table id="bySym"></table></div>
-      <div style="flex:1;min-width:220px"><b class="dim">По часам входа</b><table id="byHour"></table></div>
-    </div>
+  <div class="tabs">
+    <button class="tab on" id="tabD" onclick="showTab('d')">Дневник</button>
+    <button class="tab" id="tabS" onclick="showTab('s')">☀️ Утренний сканер</button>
   </div>
 
-  <h2>🧾 Сделки</h2>
-  <div class="card"><table id="trades"></table></div>
+  <div id="pageD">
+    <div class="card" id="dayCard">Загрузка…</div>
+
+    <h2>📅 Месяц: выполнение цели по дням</h2>
+    <div class="card">
+      <div id="monthHead" style="font-weight:600"></div>
+      <div class="cal" id="cal"></div>
+      <div class="legend" style="margin-top:10px">
+        <span><i class="dot" style="background:var(--g)"></i>цель дня выполнена</span>
+        <span><i class="dot" style="background:#8a7a1a"></i>торговал, цель не добрана</span>
+        <span><i class="dot" style="background:var(--r)"></i>день закрыт в минус</span>
+        <span><i class="dot" style="background:var(--line)"></i>без сделок</span>
+      </div>
+      <div class="grid" style="margin-top:14px" id="monthStats"></div>
+    </div>
+
+    <h2>📊 Статистика (30 дней)</h2>
+    <div class="card"><div class="grid" id="stats"></div>
+      <div class="row" style="margin-top:14px;gap:24px;align-items:flex-start">
+        <div style="flex:1;min-width:220px"><b class="dim">По монетам</b><table id="bySym"></table></div>
+        <div style="flex:1;min-width:220px"><b class="dim">По часам входа</b><table id="byHour"></table></div>
+      </div>
+    </div>
+
+    <h2>🧾 Сделки</h2>
+    <div class="card"><table id="trades"></table></div>
+  </div>
+
+  <div id="pageS" style="display:none">
+    <div class="dim" style="margin:10px 0">Отчёт обновляется автоматически каждое утро в 08:00 МСК (и вручную: кнопка «Run workflow» на GitHub → Actions).</div>
+    <iframe src="scan.html"></iframe>
+  </div>
 </div>
 
 <dialog id="dlg">
@@ -97,6 +136,14 @@ let editId = null;
 const $ = id => document.getElementById(id);
 const money = v => (v>=0?"+":"") + v.toFixed(2) + "$";
 const esc = s => (s??"").toString().replace(/</g,"&lt;");
+const MONTHS = ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"];
+
+function showTab(t){
+  $("pageD").style.display = t==="d" ? "" : "none";
+  $("pageS").style.display = t==="s" ? "" : "none";
+  $("tabD").classList.toggle("on", t==="d");
+  $("tabS").classList.toggle("on", t==="s");
+}
 
 async function doLogin(){
   const {error} = await sb.auth.signInWithPassword({email:$("email").value, password:$("pass").value});
@@ -118,37 +165,99 @@ async function doSync(){
 
 async function render(){
   const today = new Date().toISOString().slice(0,10);
+  const monthStart = today.slice(0,8)+"01";
   const {data:st} = await sb.from("settings").select("*").eq("id",1).maybeSingle();
   if(st) settings = st;
-  const {data:day} = await sb.from("days").select("*").eq("day",today).maybeSingle();
-  const since = new Date(Date.now()-30*86400e3).toISOString();
+  const {data:dayRows} = await sb.from("days").select("*").gte("day", monthStart);
+  const since = new Date(Date.now()-62*86400e3).toISOString();
   const {data:trades} = await sb.from("trades").select("*").gte("closed_at",since).order("closed_at",{ascending:false});
+  const day = (dayRows||[]).find(d=>d.day===today);
   renderDay(day, trades||[], today);
-  renderStats(trades||[]);
-  renderTrades(trades||[]);
+  renderCalendar(trades||[], dayRows||[], day);
+  renderStats((trades||[]).filter(t=>t.closed_at >= new Date(Date.now()-30*86400e3).toISOString()));
+  renderTrades((trades||[]).slice(0,60));
+}
+
+function dayPnl(trades, dstr){
+  return trades.filter(t=>t.closed_at && t.closed_at.slice(0,10)===dstr).reduce((s,t)=>s+(t.pnl||0),0);
 }
 
 function renderDay(day, trades, today){
   const el = $("dayCard");
-  if(!day){el.innerHTML = "<b>Сегодня ещё не было синка.</b> <span class=dim>Нажми «Синк с Bybit» — зафиксирую баланс начала дня и посчитаю цель.</span>"; return}
+  if(!day){el.innerHTML = "<b>Сегодня ещё не было синка.</b> <span class=dim>Нажми «⟳ Синк с Bybit» — зафиксирую баланс на утро и посчитаю цель дня.</span>"; return}
   const goal$ = day.start_balance * settings.daily_goal_pct/100;
-  const stop$ = -day.start_balance * settings.daily_stop_pct/100;
-  const pnl = trades.filter(t=>t.closed_at&&t.closed_at.slice(0,10)===today).reduce((s,t)=>s+(t.pnl||0),0);
+  const stop$ = day.start_balance * settings.daily_stop_pct/100;
+  const pnl = dayPnl(trades, today);
   const pct = pnl/day.start_balance*100;
+  const left = goal$ - pnl;
   const prog = Math.max(0, Math.min(100, pnl/goal$*100));
-  const status = pnl>=goal$ ? "🎯 ЦЕЛЬ ДНЯ ВЫПОЛНЕНА — дальше рискуем только прибылью дня"
-    : pnl<=stop$ ? "🛑 СТОП ДНЯ (−"+settings.daily_stop_pct+"%) — торговля до завтра закрыта"
+  const status = pnl>=goal$ ? "🎯 <b>Цель дня выполнена!</b> Дальше — рискуем только прибылью дня."
+    : pnl<=-stop$ ? "🛑 <b>Дневной лимит убытка исчерпан.</b> По канону торговля закрыта до завтра."
     : "";
   el.innerHTML = `
     <div class="grid">
-      <div class="stat"><span class="dim">Баланс на утро</span><b>${day.start_balance.toFixed(2)}$</b></div>
-      <div class="stat"><span class="dim">Цель дня (+${settings.daily_goal_pct}%)</span><b class="y">${money(goal$)}</b></div>
-      <div class="stat"><span class="dim">Сделано сегодня</span><b class="${pnl>=0?'g':'r'}">${money(pnl)} (${pct>=0?'+':''}${pct.toFixed(2)}%)</b></div>
-      <div class="stat"><span class="dim">Осталось до цели</span><b>${pnl>=goal$?'—':money(goal$-pnl)}</b></div>
-      <div class="stat"><span class="dim">Стоп дня (−${settings.daily_stop_pct}%)</span><b class="r">${money(stop$)}</b></div>
+      <div class="stat"><span class="dim">💰 Баланс на утро</span><b>${day.start_balance.toFixed(2)}$</b></div>
+      <div class="stat"><span class="dim">🎯 Цель на сегодня (+${settings.daily_goal_pct}%)</span><b class="y">заработать ${goal$.toFixed(2)}$</b></div>
+      <div class="stat"><span class="dim">📈 Уже заработано сегодня</span><b class="${pnl>=0?'g':'r'}">${money(pnl)} <span style="font-size:13px">(${pct>=0?'+':''}${pct.toFixed(2)}% к депозиту)</span></b></div>
+      <div class="stat"><span class="dim">🏁 До цели осталось</span><b>${pnl>=goal$? '0$ — выполнена ✅' : left.toFixed(2)+'$'}</b></div>
+      <div class="stat"><span class="dim">🛑 Лимит убытка на день (−${settings.daily_stop_pct}%)</span><b class="r">не потерять больше ${stop$.toFixed(2)}$</b></div>
     </div>
-    <div class="bar"><div style="width:${prog}%;background:${pnl>=0?'var(--g)':'var(--r)'}"></div></div>
-    ${status?`<div style="margin-top:10px;font-weight:600">${status}</div>`:""}`;
+    <div class="bar" title="Прогресс к цели дня"><div style="width:${prog}%;background:${pnl>=0?'var(--g)':'var(--r)'}"></div></div>
+    <div class="dim" style="margin-top:4px">Полоса — прогресс к цели дня: ${prog.toFixed(0)}%</div>
+    ${status?`<div style="margin-top:10px">${status}</div>`:""}`;
+}
+
+function renderCalendar(trades, dayRows, todayRow){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  $("monthHead").textContent = MONTHS[m].charAt(0).toUpperCase()+MONTHS[m].slice(1)+" "+y;
+  const dim = new Date(y, m+1, 0).getDate();
+  const startDow = (new Date(y, m, 1).getDay()+6)%7;   // Пн=0
+  const sbal = {};
+  dayRows.forEach(r=>{ sbal[parseInt(r.day.slice(8,10))] = r.start_balance; });
+  let html = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(d=>`<div class="hd">${d}</div>`).join("");
+  html += "<div></div>".repeat(startDow);
+  let hits=0, traded=0, stops=0;
+  for(let d=1; d<=dim; d++){
+    const dstr = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const pnl = dayPnl(trades, dstr);
+    const has = trades.some(t=>t.closed_at && t.closed_at.slice(0,10)===dstr);
+    const bal = sbal[d];
+    let cls="", val="";
+    if(has){
+      traded++;
+      const pct = bal? pnl/bal*100 : null;
+      const hit = pct!=null ? pct>=settings.daily_goal_pct : false;
+      if(hit){cls="hit"; hits++;}
+      else if(pnl<0){cls="stopd"; stops++;}
+      else cls="miss";
+      val = `<span class="v ${pnl>=0?'g':'r'}">${pct!=null?(pct>=0?'+':'')+pct.toFixed(1)+'%':money(pnl)}</span>`;
+    }
+    const isToday = d===now.getDate();
+    html += `<div class="day ${cls} ${isToday?'today':''}"><span class="n">${d}</span>${val}</div>`;
+  }
+  $("cal").innerHTML = html;
+
+  // Прогноз на конец месяца
+  const curBal = todayRow ? todayRow.start_balance + dayPnl(trades, new Date().toISOString().slice(0,10))
+                          : (Object.keys(sbal).length? sbal[Math.max(...Object.keys(sbal).map(Number))] : null);
+  let rest = 0;
+  for(let d=now.getDate()+1; d<=dim; d++){
+    const dow = new Date(y,m,d).getDay();
+    if(dow!==0 && dow!==6) rest++;   // торговые дни = будни
+  }
+  const goalK = 1 + settings.daily_goal_pct/100;
+  const forecast = curBal!=null ? curBal * Math.pow(goalK, rest) : null;
+  $("monthStats").innerHTML = `
+    <div class="stat"><span class="dim">Целей выполнено в этом месяце</span><b>${hits} из ${traded} торговых дней</b></div>
+    <div class="stat"><span class="dim">Дней в минус</span><b class="${stops?'r':'g'}">${stops}</b></div>
+    <div class="stat"><span class="dim">Осталось торговых дней (будни)</span><b>${rest}</b></div>
+    <div class="stat"><span class="dim">📈 Прогноз на конец месяца*</span><b class="y">${forecast!=null? forecast.toFixed(2)+"$" : "—"}</b></div>`;
+  const note = document.createElement("div");
+  note.className="dim"; note.style.marginTop="8px";
+  note.textContent = `*Если выполнять цель +${settings.daily_goal_pct}% каждый оставшийся будний день (сложный процент от текущего баланса${curBal!=null?" "+curBal.toFixed(2)+"$":""}). Это ориентир дисциплины, не обещание рынка.`;
+  $("monthStats").after(note);
+  const old = $("monthStats").parentElement.querySelectorAll(".dim:not(:last-child)");
 }
 
 function renderStats(trades){
