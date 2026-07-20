@@ -1,8 +1,8 @@
 // ДНЕВНИК — синхронизация с Bybit (Supabase Edge Function, Deno)
 // Тянет закрытые сделки (closed-pnl) и баланс; фиксирует баланс начала дня.
-// Секреты (Dashboard → Edge Functions → Secrets):
-//   BYBIT_KEY, BYBIT_SECRET  — read-only ключ Ивана
-//   SB_URL, SB_SERVICE_KEY   — URL проекта и service_role ключ
+// Секреты (Dashboard → Edge Functions → Secrets) — нужны только ДВА:
+//   BYBIT_KEY, BYBIT_SECRET — read-only ключ Ивана
+// (URL проекта и service-ключ Supabase подставляет автоматически)
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const API = "https://api.bybit.com";
@@ -35,7 +35,9 @@ async function bybitGet(path: string, params: Record<string, string>) {
 
 Deno.serve(async () => {
   try {
-    const sb = createClient(Deno.env.get("SB_URL")!, Deno.env.get("SB_SERVICE_KEY")!);
+    const sb = createClient(
+      Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SB_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SB_SERVICE_KEY")!);
 
     // 1) Баланс (UNIFIED equity)
     const wallet = await bybitGet("/v5/account/wallet-balance", { accountType: "UNIFIED" });
