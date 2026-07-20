@@ -41,6 +41,15 @@ create policy "auth all settings" on settings for all to authenticated using (tr
 create policy "auth all days" on days for all to authenticated using (true) with check (true);
 create policy "auth all trades" on trades for all to authenticated using (true) with check (true);
 
+-- Отчёт утреннего сканера (одна строка, обновляется функцией market-scan)
+create table if not exists scan_reports (
+  id int primary key default 1 check (id = 1),
+  html text,
+  updated_at timestamptz default now()
+);
+alter table scan_reports enable row level security;
+create policy "auth read scan" on scan_reports for select to authenticated using (true);
+
 -- Хранилище скриншотов
 insert into storage.buckets (id, name, public) values ('screens', 'screens', false)
 on conflict do nothing;

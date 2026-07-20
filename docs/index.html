@@ -105,8 +105,11 @@ const SYNC_URL = SUPABASE_URL + "/functions/v1/bybit-sync";
   </div>
 
   <div id="pageS" style="display:none">
-    <div class="dim" style="margin:10px 0">Отчёт обновляется автоматически каждое утро в 08:00 МСК (и вручную: кнопка «Run workflow» на GitHub → Actions).</div>
-    <iframe src="scan.html"></iframe>
+    <div class="row" style="margin:10px 0;justify-content:space-between">
+      <span class="dim" id="scanInfo">Загрузка отчёта…</span>
+      <button onclick="runScan()" id="scanBtn">⟳ Обновить сканер сейчас</button>
+    </div>
+    <iframe id="scanFrame"></iframe>
   </div>
 </div>
 
@@ -143,6 +146,33 @@ function showTab(t){
   $("pageS").style.display = t==="s" ? "" : "none";
   $("tabD").classList.toggle("on", t==="d");
   $("tabS").classList.toggle("on", t==="s");
+  if(t==="s" && !window._scanLoaded) loadScan();
+}
+
+async function loadScan(){
+  const {data} = await sb.from("scan_reports").select("*").eq("id",1).maybeSingle();
+  if(data && data.html){
+    $("scanFrame").srcdoc = data.html;
+    $("scanInfo").textContent = "Отчёт от " + new Date(data.updated_at).toLocaleString("ru",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    window._scanLoaded = true;
+  }else{
+    $("scanInfo").textContent = "Отчёта ещё нет — нажми «Обновить сканер сейчас» (займёт ~30 секунд).";
+  }
+}
+
+async function runScan(){
+  $("scanBtn").disabled = true;
+  $("scanBtn").textContent = "⏳ Сканирую рынок… ~30 сек";
+  try{
+    const {data:{session}} = await sb.auth.getSession();
+    const r = await fetch(SUPABASE_URL + "/functions/v1/market-scan", {headers:{Authorization:"Bearer "+session.access_token}});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error);
+    window._scanLoaded = false;
+    await loadScan();
+  }catch(e){alert("Ошибка сканера: "+e.message)}
+  $("scanBtn").disabled = false;
+  $("scanBtn").textContent = "⟳ Обновить сканер сейчас";
 }
 
 async function doLogin(){
