@@ -164,6 +164,16 @@ async function render() {
     : "";
 }
 
+// Раскладка результата дня по слагаемым: закрыто + открытые позиции + фандинг/прочее
+function dayBreakdown(d, res, lastSnap) {
+  const realized = Number(d.realized_pnl) || 0;
+  const upl = lastSnap?.upl != null ? Number(lastSnap.upl) : null;
+  if (upl == null) return "рост счёта с начала дня: закрытые сделки + открытые позиции − комиссии";
+  const other = res - realized - upl;
+  const p = (v) => usd(v, { sign: true });
+  return `= закрыто ${p(realized)} + открытые позиции ${p(upl)} + фандинг/прочее ${p(other)}`;
+}
+
 function renderSummary(d, lastSnap, diary) {
   const el = root.querySelector("#dy-summary");
   const bars = root.querySelector("#dy-bars");
@@ -191,10 +201,10 @@ function renderSummary(d, lastSnap, diary) {
     <div class="card"><div class="k">Баланс на начало дня${d.start_accurate ? "" : ` <span class="tag yellow">≈ приблизительно</span>`}</div>
       <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}${vaultV > 0 ? ` · в кубышке ${usd(vaultV)} → в работе ${usd(B0w)}` : ""}</div></div>
     <div class="card"><div class="k">Сейчас на счету</div><div class="v">${usd(Bt)}</div>
-      <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}</div></div>
+      <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}${lastSnap?.upl != null && Math.abs(lastSnap.upl) >= 0.005 ? ` · в т.ч. открытые позиции ${usd(Number(lastSnap.upl), { sign: true })}` : ""}</div></div>
     <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня</div>
       <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint ${res > 0 ? "green" : res < 0 ? "red" : ""}">${pct(resPct)}</span></div>
-      <div class="muted small">на сколько вырос счёт с начала дня: закрытые сделки + открытые позиции − комиссии${(d.net_flow || 0) !== 0 ? " (пополнения/выводы исключены)" : ""}${vaultV > 0 ? "; % — от рабочего капитала" : ""}</div></div>
+      <div class="muted small">${dayBreakdown(d, res, lastSnap)}${(d.net_flow || 0) !== 0 ? " · пополнения/выводы исключены" : ""}${vaultV > 0 ? " · % — от рабочего капитала" : ""}</div></div>
     <div class="card"><div class="k">Закрыто сделками за день</div>
       <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
       <div class="muted small">чистая прибыль ${d.trades_count} закрытых сделок</div></div>

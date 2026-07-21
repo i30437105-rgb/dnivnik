@@ -44,7 +44,7 @@ export async function loadSnapshots(day) {
 
 export async function loadLatestSnapshot() {
   const { data } = await sb.from("account_snapshots")
-    .select("ts, equity").order("ts", { ascending: false }).limit(1).maybeSingle();
+    .select("ts, equity, upl").order("ts", { ascending: false }).limit(1).maybeSingle();
   return data;
 }
 

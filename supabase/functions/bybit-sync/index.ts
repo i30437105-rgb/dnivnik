@@ -75,6 +75,7 @@ Deno.serve(async (req) => {
     // ---------- 1. Снимок баланса (total equity, Unified) ----------
     const wallet = await bybitGet("/v5/account/wallet-balance", { accountType: "UNIFIED" });
     const equity = parseFloat(wallet.list?.[0]?.totalEquity ?? "0");
+    const upl = wallet.list?.[0]?.totalPerpUPL != null ? parseFloat(wallet.list[0].totalPerpUPL) : null;
 
     // Является ли этот запуск снимком начала дня
     const { data: existingStart } = await sb.from("account_snapshots")
@@ -83,7 +84,7 @@ Deno.serve(async (req) => {
       (task === "auto" && local.hour === 0 && local.minute < 10 && !existingStart?.length);
 
     await sb.from("account_snapshots").insert({
-      ts: now.toISOString(), equity,
+      ts: now.toISOString(), equity, upl,
       kind: isDayStart ? "day_start" : (task === "auto" ? "auto" : "manual"),
       day: today, accurate: true,
     });
