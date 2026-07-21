@@ -1,6 +1,6 @@
 // Вкладка «Кубышка»: неприкосновенный резерв — 50% прибыли каждого плюсового дня (вариант А)
-import { loadVault, loadLatestSnapshot, loadDaysRange, saveSettings } from "./api.js";
-import { state, esc, usd, pct, fmtRu, fmtDay, fmtDT, todayLocal, sortableTable, notify } from "./util.js";
+import { loadVault, loadLatestSnapshot, loadDaysRange, saveSettings, runSync } from "./api.js";
+import { state, esc, usd, pct, fmtRu, fmtDay, fmtDT, todayLocal, sortableTable, notify, busyButton } from "./util.js";
 
 let root;
 
@@ -9,10 +9,13 @@ export function initVault(container) {
   root.innerHTML = `
     <header class="pagehead">
       <div class="titles"><h1>Кубышка</h1><span class="sub">неприкосновенная часть прибыли</span></div>
-      <div class="right"><button id="vl-refresh" class="btn">Обновить</button></div>
+      <div class="right">
+        <span id="vl-status" class="status"></span>
+        <button id="vl-refresh" class="btn">Обновить</button>
+      </div>
     </header>
     <div id="vl-body"><div class="loading">Загружаю…</div></div>`;
-  root.querySelector("#vl-refresh").onclick = () => render();
+  busyButton(root.querySelector("#vl-refresh"), async () => { await runSync(); await render(); });
   render().catch((e) => root.querySelector("#vl-body").innerHTML =
     `<div class="warn">Ошибка: ${esc(e.message)}</div>`);
 }
@@ -30,6 +33,10 @@ async function render() {
   const [ledger, lastSnap, days] = await Promise.all([
     loadVault(), loadLatestSnapshot(), loadDaysRange(startDay, today),
   ]);
+
+  root.querySelector("#vl-status").innerHTML = lastSnap
+    ? `<span class="ok num">Данные актуальны на ${fmtDT(lastSnap.ts)}</span>`
+    : `<span class="muted">Данных ещё нет</span>`;
 
   const vault = ledger.reduce((sum, l) => sum + Number(l.amount), 0);
   const accrued = ledger.filter((l) => l.type === "accrual").reduce((sum, l) => sum + Number(l.amount), 0);
