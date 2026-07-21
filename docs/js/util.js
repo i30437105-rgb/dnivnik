@@ -24,21 +24,21 @@ export function usd(v, { sign = false } = {}) {
   else if (abs >= 1e5) short = `${s}$${fmtRu(abs / 1e3, 0)} тыс.`;
   else short = `${s}$${fmtRu(abs, 2)}`;
   const exact = `${n < 0 ? "−" : ""}$${fmtRu(abs, abs < 1 ? 6 : 2)}`;
-  return `<span title="${exact}">${short}</span>`;
+  return `<span class="num" title="${exact}">${short}</span>`;
 }
 
 export function pct(v, { digits = 2, sign = true } = {}) {
   if (v == null || Number.isNaN(v)) return "—";
   const n = Number(v);
   const s = n < 0 ? "−" : (sign && n > 0 ? "+" : "");
-  return `${s}${fmtRu(Math.abs(n), digits)}%`;
+  return `<span class="num">${s}${fmtRu(Math.abs(n), digits)}%</span>`;
 }
 
 export function price(v) {
   if (v == null || Number.isNaN(v)) return "—";
   const n = Number(v);
   const digits = n >= 1000 ? 2 : n >= 1 ? 4 : n >= 0.001 ? 6 : 8;
-  return `$${fmtRu(n, digits)}`;
+  return `<span class="num">$${fmtRu(n, digits)}</span>`;
 }
 
 export function fmtRu(n, digits) {
@@ -163,11 +163,41 @@ export function sortableTable(container, columns, rows, opts = {}) {
 // ---------- Статусная строка вкладки ----------
 export function statusLine(el, { lastOk, error, errorAt, stale }) {
   let html = "";
-  if (lastOk) html += `<span class="ok">Данные актуальны на ${fmtDT(lastOk)}</span>`;
+  if (lastOk) html += `<span class="ok num">Данные актуальны на ${fmtDT(lastOk)}</span>`;
   else html += `<span class="muted">Данных ещё нет — нажмите «Обновить»</span>`;
-  if (stale) html += ` <span class="warn">⚠ данные устарели</span>`;
-  if (error) html += `<div class="warn">⚠ Часть источников не обновилась (${fmtDT(errorAt)}): ${esc(error)}. Показаны последние успешные данные.</div>`;
+  if (stale) html += `<span class="warn">⚠ данные устарели</span>`;
+  if (error) html += `<span class="warn" title="${esc(error)}">⚠ часть источников не обновилась (${fmtDT(errorAt)}) — показаны последние успешные данные</span>`;
   el.innerHTML = html;
+}
+
+// ---------- Тосты (вместо alert/confirm — по макету дизайнера) ----------
+function toastWrap() {
+  let w = document.querySelector(".toast-wrap");
+  if (!w) { w = document.createElement("div"); w.className = "toast-wrap"; document.body.appendChild(w); }
+  return w;
+}
+
+export function notify(text, kind = "info", ms = 4000) {
+  const w = toastWrap();
+  const t = document.createElement("div");
+  t.className = `toast ${kind === "error" ? "err" : ""}`;
+  t.innerHTML = `<span>${esc(text)}</span>`;
+  w.appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+
+export function confirmToast(text, okLabel = "Удалить") {
+  return new Promise((resolve) => {
+    const w = toastWrap();
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.innerHTML = `<span>${esc(text)}</span>
+      <div class="row"><button class="btn small t-no">Отмена</button>
+      <button class="btn small danger t-ok">${esc(okLabel)}</button></div>`;
+    w.appendChild(t);
+    t.querySelector(".t-ok").onclick = () => { t.remove(); resolve(true); };
+    t.querySelector(".t-no").onclick = () => { t.remove(); resolve(false); };
+  });
 }
 
 // ---------- Кнопка с блокировкой на время запроса (ТЗ §3) ----------
@@ -176,8 +206,8 @@ export function busyButton(btn, fn) {
     if (btn.disabled) return;
     const label = btn.textContent;
     btn.disabled = true;
-    btn.textContent = "Обновляю…";
-    try { await fn(); } catch (e) { alert("Ошибка: " + e.message); }
+    btn.innerHTML = `<span style="width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;animation:spin .7s linear infinite"></span> Обновляю…`;
+    try { await fn(); } catch (e) { notify("Ошибка: " + e.message, "error", 6000); }
     btn.disabled = false;
     btn.textContent = label;
   });

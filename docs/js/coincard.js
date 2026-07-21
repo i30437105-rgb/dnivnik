@@ -64,11 +64,11 @@ function render(modal, base, symbol, coin, instruments) {
       <div>
         <h3>Рынок</h3>
         <div id="cc-market" class="muted">загружаю…</div>
-        <div class="row" id="cc-ranges" style="margin:8px 0">
+        <div class="seg" id="cc-ranges" style="margin:8px 0">
           ${Object.entries(RANGES).map(([k, r]) =>
-            `<button class="btn small range" data-r="${k}">${r.label}</button>`).join("")}
+            `<button class="btn range" data-r="${k}">${r.label}</button>`).join("")}
         </div>
-        <div id="cc-chart" style="height:280px"></div>
+        <div id="cc-chart" style="height:280px;border:1px solid var(--chart-grid);border-radius:10px;overflow:hidden"></div>
         <div id="cc-updated" class="muted small"></div>
       </div>
     </div>`;
@@ -94,14 +94,18 @@ function render(modal, base, symbol, coin, instruments) {
         open: +c[1], high: +c[2], low: +c[3], close: +c[4],
       })).reverse();
       if (!chart) {
+        const css = getComputedStyle(document.documentElement);
+        const tk = (name) => css.getPropertyValue(name).trim();
         chart = LightweightCharts.createChart(modal.el.querySelector("#cc-chart"), {
-          height: 280, layout: { background: { color: "transparent" }, textColor: "#9aa4b2" },
-          grid: { vertLines: { color: "#222b38" }, horzLines: { color: "#222b38" } },
-          timeScale: { timeVisible: true, secondsVisible: false },
+          height: 280, layout: { background: { color: tk("--bg-inset") }, textColor: tk("--chart-axis-text") },
+          grid: { vertLines: { color: tk("--chart-grid") }, horzLines: { color: tk("--chart-grid") } },
+          crosshair: { vertLine: { color: tk("--chart-crosshair") }, horzLine: { color: tk("--chart-crosshair") } },
+          timeScale: { timeVisible: true, secondsVisible: false, borderColor: tk("--chart-grid") },
+          rightPriceScale: { borderColor: tk("--chart-grid") },
         });
         series = chart.addCandlestickSeries({
-          upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
-          wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+          upColor: tk("--chart-candle-up"), downColor: tk("--chart-candle-down"), borderVisible: false,
+          wickUpColor: tk("--chart-candle-up"), wickDownColor: tk("--chart-candle-down"),
         });
       }
       series.setData(candles);

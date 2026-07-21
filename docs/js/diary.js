@@ -18,40 +18,47 @@ export function initDiary(container) {
   const today = todayLocal();
   period.anchor = today.slice(0, 7);
   root.innerHTML = `
-    <div class="toolbar">
-      <button id="dy-sync" class="btn primary">Обновить</button>
-      <span id="dy-status" class="status"></span>
-    </div>
+    <header class="pagehead">
+      <div class="titles"><h1>Дневник</h1><span class="sub">торговый терминал</span></div>
+      <div class="right">
+        <span id="dy-status" class="status"></span>
+        <button id="dy-sync" class="btn">Обновить</button>
+      </div>
+    </header>
     <div id="dy-flow-warn"></div>
-    <section class="block"><div id="dy-summary" class="cards"></div>
+    <section style="margin-bottom:26px"><div id="dy-summary" class="cards"></div>
       <div id="dy-bars"></div></section>
-    <section class="block">
-      <div class="row spread">
-        <h2>Календарь результатов</h2>
-        <div class="row">
-          <button class="btn small pmode" data-m="month">Месяц</button>
-          <button class="btn small pmode" data-m="week">Неделя</button>
-          <button class="btn small pmode" data-m="weeks">Сводка недель</button>
-          <button class="btn small" id="dy-prev">←</button>
-          <span id="dy-period-label" class="plabel"></span>
-          <button class="btn small" id="dy-next">→</button>
+    <section style="margin-bottom:26px">
+      <div class="row spread" style="margin-bottom:14px">
+        <h2 style="margin:0">Календарь результатов</h2>
+        <div class="row" style="gap:14px">
+          <div class="seg">
+            <button class="btn pmode" data-m="month">Месяц</button>
+            <button class="btn pmode" data-m="week">Неделя</button>
+            <button class="btn pmode" data-m="weeks">Сводка недель</button>
+          </div>
+          <div class="row">
+            <button class="btn small" id="dy-prev">‹</button>
+            <span id="dy-period-label" class="plabel"></span>
+            <button class="btn small" id="dy-next">›</button>
+          </div>
         </div>
       </div>
       <div id="dy-calendar"></div>
     </section>
     <section class="block">
-      <div class="row spread">
-        <h2>График результата</h2>
-        <div class="row">
-          <button class="btn small cunit" data-u="usd">USD</button>
-          <button class="btn small cunit" data-u="pct">%</button>
+      <div class="row spread" style="margin-bottom:12px">
+        <h2 style="margin:0">График результата за период</h2>
+        <div class="seg">
+          <button class="btn cunit" data-u="usd">USD</button>
+          <button class="btn cunit" data-u="pct">%</button>
         </div>
       </div>
       <div id="dy-chart" style="height:260px"></div>
-      <div class="muted small">В режиме «Неделя»/«Месяц» — баланс на конец каждого дня; клик по дню календаря покажет внутридневную линию.</div>
+      <div class="muted small" style="margin-top:6px">В режиме «Неделя»/«Месяц» — баланс на конец каждого дня; в режиме одного дня — внутридневная линия с целью и лимитом.</div>
     </section>
-    <section class="block"><h2>Статистика за период</h2><div id="dy-stats"></div></section>
-    <section class="block"><h2>Сделки за период</h2><div id="dy-trades" class="tblwrap"></div></section>`;
+    <section style="margin-bottom:26px"><h2>Статистика за период</h2><div id="dy-stats"></div></section>
+    <section><h2>Сделки за период</h2><div id="dy-trades" class="tblwrap block" style="padding:0"></div></section>`;
 
   busyButton(root.querySelector("#dy-sync"), async () => { await runSync(); await render(); });
   root.querySelectorAll(".pmode").forEach((b) => b.onclick = () => {
@@ -173,8 +180,8 @@ function renderSummary(d, lastSnap, diary) {
       <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}</div></div>
     <div class="card"><div class="k">Сейчас на счету</div><div class="v">${usd(Bt)}</div>
       <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}</div></div>
-    <div class="card"><div class="k">Результат дня</div>
-      <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint">${pct(resPct)}</span></div>
+    <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня</div>
+      <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint ${res > 0 ? "green" : res < 0 ? "red" : ""}">${pct(resPct)}</span></div>
       <div class="muted small">на сколько вырос счёт с начала дня: закрытые сделки + открытые позиции − комиссии${(d.net_flow || 0) !== 0 ? " (пополнения/выводы исключены)" : ""}</div></div>
     <div class="card"><div class="k">Закрыто сделками за день</div>
       <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
@@ -187,9 +194,9 @@ function renderSummary(d, lastSnap, diary) {
   const progress = goalUsd > 0 ? Math.max(res / goalUsd * 100, 0) : 0;
   const lossProg = lossUsd > 0 ? Math.min(Math.max(-res, 0) / lossUsd * 100, 100) : 0;
   bars.innerHTML = `
-    <div class="barwrap"><div class="barlabel">К цели: ${fmtRu(Math.round(progress), 0)}%</div>
+    <div class="barwrap"><div class="barlabel"><span>К цели дня</span><b class="green">${fmtRu(Math.round(progress), 0)}%</b></div>
       <div class="bar"><div class="fill green" style="width:${Math.min(progress, 100)}%"></div></div></div>
-    ${res < 0 ? `<div class="barwrap"><div class="barlabel red">К лимиту убытка: ${fmtRu(Math.round(lossProg), 0)}%</div>
+    ${res < 0 ? `<div class="barwrap"><div class="barlabel red"><span>К лимиту убытка</span><b>${fmtRu(Math.round(lossProg), 0)}%</b></div>
       <div class="bar"><div class="fill red" style="width:${lossProg}%"></div></div></div>` : ""}`;
 }
 
@@ -296,17 +303,22 @@ async function renderChart(days, today) {
   const base = points[0].value;
   if (isPct && base > 0) points = points.map((p) => ({ time: p.time, value: (p.value - base) / base * 100 }));
 
+  const css = getComputedStyle(document.documentElement);
+  const tk = (name) => css.getPropertyValue(name).trim();
   const chart = LightweightCharts.createChart(el, {
-    height: 260, layout: { background: { color: "transparent" }, textColor: "#9aa4b2" },
-    grid: { vertLines: { color: "#222b38" }, horzLines: { color: "#222b38" } },
-    timeScale: { timeVisible: typeof points[0].time === "number" },
+    height: 260, layout: { background: { color: "transparent" }, textColor: tk("--chart-axis-text") },
+    grid: { vertLines: { color: tk("--chart-grid") }, horzLines: { color: tk("--chart-grid") } },
+    crosshair: { vertLine: { color: tk("--chart-crosshair") }, horzLine: { color: tk("--chart-crosshair") } },
+    timeScale: { timeVisible: typeof points[0].time === "number", borderColor: tk("--chart-grid") },
+    rightPriceScale: { borderColor: tk("--chart-grid") },
   });
   const series = chart.addAreaSeries({
-    lineColor: "#4f8cff", topColor: "rgba(79,140,255,.25)", bottomColor: "rgba(79,140,255,0)",
+    lineColor: tk("--chart-line"), lineWidth: 2.2,
+    topColor: tk("--chart-area-top"), bottomColor: tk("--chart-area-bot"),
   });
   series.setData(points);
-  if (goalLine != null) series.createPriceLine({ price: goalLine, color: "#26a69a", lineStyle: 2, title: "цель" });
-  if (lossLine != null) series.createPriceLine({ price: lossLine, color: "#ef5350", lineStyle: 2, title: "лимит" });
+  if (goalLine != null) series.createPriceLine({ price: goalLine, color: tk("--chart-goal"), lineStyle: 2, title: "цель" });
+  if (lossLine != null) series.createPriceLine({ price: lossLine, color: tk("--chart-limit"), lineStyle: 2, title: "лимит" });
   chart.timeScale().fitContent();
 }
 

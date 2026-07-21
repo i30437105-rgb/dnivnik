@@ -11,6 +11,8 @@ const TZ_LIST = [
 export function initSettings(container) {
   const s = state.settings;
   container.innerHTML = `
+    <header class="pagehead"><div class="titles"><h1>Настройки</h1></div></header>
+    <div style="max-width:760px">
     <section class="block"><h2>Дневник</h2>
       <div class="form">
         <label>Часовой пояс (границы торгового дня — 00:00 этого пояса)
@@ -40,10 +42,11 @@ export function initSettings(container) {
       <div id="st-strats"></div>
       <div class="row"><input id="st-newstrat" placeholder="Название новой стратегии"><button id="st-addstrat" class="btn">Добавить</button></div>
     </section>
-    <section class="block"><h2>Подключения</h2>
-      <p class="muted">Ключ Bybit (только чтение) и ключи CoinGecko / перевода хранятся в секретах сервера
+    <section class="block" style="background:var(--bg-inset)"><h2 style="font-size:14px;color:var(--text-2)">Подключения</h2>
+      <p class="muted small" style="line-height:1.55">Ключ Bybit (только чтение) и ключи CoinGecko / перевода хранятся в секретах сервера
       и не попадают в браузер. Изменить их можно в панели Supabase → Edge Functions → Secrets.</p>
-    </section>`;
+    </section>
+    </div>`;
 
   container.querySelector("#st-save").onclick = async () => {
     const msg = container.querySelector("#st-msg");

@@ -2,7 +2,7 @@
 import {
   loadExecutionsWindow, saveTradeNote, uploadAttachment, loadAttachments, deleteAttachment,
 } from "./api.js";
-import { esc, usd, price, fmtRu, fmtDT, sortableTable } from "./util.js";
+import { esc, usd, price, fmtRu, fmtDT, sortableTable, notify, confirmToast } from "./util.js";
 
 export async function renderTradeCard(holder, trade, strategies) {
   const note = trade.trade_notes ?? {};
@@ -62,7 +62,7 @@ export async function renderTradeCard(holder, trade, strategies) {
         strategy_id: holder.querySelector(".n-strat").value ? Number(holder.querySelector(".n-strat").value) : null,
       });
       holder.querySelector(".n-saved").textContent = "✓ сохранено " + fmtDT(new Date().toISOString());
-    } catch (e) { alert("Не сохранилось: " + e.message); }
+    } catch (e) { notify("Не сохранилось: " + e.message, "error", 6000); }
   };
 
   // Скриншоты
@@ -76,7 +76,7 @@ export async function renderTradeCard(holder, trade, strategies) {
         <button class="btn small att-del" data-id="${a.id}">Удалить</button></div>
       </div>`).join("") : `<div class="muted small">Нет скриншотов</div>`;
     box.querySelectorAll(".att-del").forEach((b) => b.onclick = async () => {
-      if (!confirm("Удалить скриншот?")) return;
+      if (!(await confirmToast("Удалить скриншот? Действие необратимо."))) return;
       await deleteAttachment(atts.find((a) => a.id === b.dataset.id));
       renderAtts();
     });
@@ -84,7 +84,7 @@ export async function renderTradeCard(holder, trade, strategies) {
   renderAtts();
   holder.querySelector(".n-file").onchange = async (e) => {
     for (const f of e.target.files) {
-      try { await uploadAttachment(trade.id, f); } catch (err) { alert(`${f.name}: ${err.message}`); }
+      try { await uploadAttachment(trade.id, f); } catch (err) { notify(`${f.name}: ${err.message}`, "error", 6000); }
     }
     e.target.value = "";
     renderAtts();

@@ -9,10 +9,13 @@ export function initAnalytics(container) {
   root = container;
   const F = state.settings?.filters ?? {};
   root.innerHTML = `
-    <div class="toolbar">
-      <button id="an-run" class="btn primary">Запустить анализ</button>
-      <span id="an-status" class="status"></span>
-    </div>
+    <header class="pagehead">
+      <div class="titles"><h1>Аналитика монет</h1><span class="sub">поиск кандидатов для торговли</span></div>
+      <div class="right">
+        <span id="an-status" class="status"></span>
+        <button id="an-run" class="btn primary">Запустить анализ</button>
+      </div>
+    </header>
     <details class="block" id="an-filters">
       <summary><b>⚙️ Пороги фильтров</b> <span class="hint">поменяй значения и нажми «Сохранить и запустить»</span></summary>
       <div class="form" style="margin-top:10px">
@@ -38,16 +41,25 @@ export function initAnalytics(container) {
       </div>
     </details>
     <div id="an-warn"></div>
-    <section class="block">
-      <h2>🆕 Новые листинги <span class="hint">фьючерс появился на Bybit не более 72 ч назад — высокий риск</span></h2>
+    <section class="block" style="padding:0;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--chart-grid)">
+        <h2 style="margin:0;font-size:15px">🆕 Новые листинги</h2>
+        <div class="hint" style="margin-top:3px">Появились на бирже недавно. Высокая волатильность и риск.</div>
+      </div>
       <div id="an-listings" class="tblwrap"></div>
     </section>
-    <section class="block">
-      <h2>⚡ Основная стратегия <span class="hint">прошли базовые фильтры возраста и ликвидности, диапазон ≥ порога за 6 ч. Риск не исключён</span></h2>
+    <section class="block" style="padding:0;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--chart-grid)">
+        <h2 style="margin:0;font-size:15px">⚡ Основная стратегия</h2>
+        <div class="hint" style="margin-top:3px">Ликвидные монеты с высокой внутридневной волатильностью. Фильтры не исключают рыночный риск.</div>
+      </div>
       <div id="an-volatile" class="tblwrap"></div>
     </section>
-    <section class="block">
-      <h2>📈 Аномальный рост спотового объёма <span class="hint">оборот за 24 ч кратно выше обычного уровня</span></h2>
+    <section class="block" style="padding:0;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--chart-grid)">
+        <h2 style="margin:0;font-size:15px">📈 Аномальный рост спотового объёма</h2>
+        <div class="hint" style="margin-top:3px">Оборот резко выше обычного — возможен приток интереса.</div>
+      </div>
       <div id="an-spike" class="tblwrap"></div>
     </section>`;
 
@@ -168,6 +180,6 @@ function spark(vals) {
   if (!vals?.length) return "";
   const max = Math.max(...vals);
   return `<span class="spark" title="Суточный оборот за 8 последних суток">` + vals.map((v, i) =>
-    `<i style="height:${Math.max(2, Math.round(v / max * 18))}px" class="${i === vals.length - 1 ? "hot" : ""}"></i>`
+    `<i style="height:${Math.max(2, Math.round(v / max * 24))}px" class="${i === vals.length - 1 ? "hot" : ""}"></i>`
   ).join("") + `</span>`;
 }

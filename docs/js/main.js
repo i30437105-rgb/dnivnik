@@ -23,12 +23,13 @@ async function boot() {
 function renderLogin() {
   app.innerHTML = `
     <div class="login">
+      <div class="logo">Ж</div>
       <h1>Торговый дневник</h1>
       <form id="lf">
         <input id="lf-email" type="email" placeholder="E-mail" required autocomplete="username">
         <input id="lf-pass" type="password" placeholder="Пароль" required autocomplete="current-password">
         <button class="btn primary" type="submit">Войти</button>
-        <div id="lf-err" class="warn"></div>
+        <div id="lf-err"></div>
       </form>
     </div>`;
   document.getElementById("lf").onsubmit = async (e) => {
@@ -43,26 +44,32 @@ function renderLogin() {
 }
 
 const TABS = [
-  { id: "diary", label: "📓 Дневник", init: initDiary },
-  { id: "analytics", label: "📊 Аналитика монет", init: initAnalytics },
-  { id: "settings", label: "⚙️ Настройки", init: initSettings },
+  { id: "diary", label: "Дневник", icon: "📓", init: initDiary },
+  { id: "analytics", label: "Аналитика монет", icon: "📊", init: initAnalytics },
+  { id: "settings", label: "Настройки", icon: "⚙️", init: initSettings },
 ];
 const inited = new Set();
 
 function renderShell() {
   app.innerHTML = `
-    <header class="top">
-      <nav>${TABS.map((t) => `<button class="tab" data-t="${t.id}">${t.label}</button>`).join("")}</nav>
-      <button id="logout" class="btn small">Выйти</button>
-    </header>
-    ${TABS.map((t) => `<main id="tab-${t.id}" class="tabpane" hidden></main>`).join("")}`;
+    <div class="layout">
+      <nav class="side">
+        <div class="logo">Ж</div>
+        ${TABS.map((t) => `<button class="tab" data-t="${t.id}" title="${t.label}">${t.icon}</button>`).join("")}
+        <div class="spacer"></div>
+        <button id="logout" class="side-btn" title="Выйти">⏻</button>
+      </nav>
+      <div class="content">
+        ${TABS.map((t) => `<main id="tab-${t.id}" class="tabpane" hidden></main>`).join("")}
+      </div>
+    </div>`;
   document.getElementById("logout").onclick = signOut;
-  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => showTab(b.dataset.t));
+  document.querySelectorAll(".side .tab").forEach((b) => b.onclick = () => showTab(b.dataset.t));
   showTab("diary");
 }
 
 function showTab(id) {
-  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("primary", b.dataset.t === id));
+  document.querySelectorAll(".side .tab").forEach((b) => b.classList.toggle("on", b.dataset.t === id));
   for (const t of TABS) {
     const pane = document.getElementById("tab-" + t.id);
     pane.hidden = t.id !== id;
