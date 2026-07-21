@@ -9,6 +9,7 @@ const API = "https://api.bybit.com";
 const API_FALLBACK = "https://api.bytick.com";
 const STABLE_BASES = new Set([
   "USDC", "USDE", "DAI", "FDUSD", "TUSD", "USDD", "PYUSD", "USTC", "BUSD", "EUR", "USDY", "USD1", "XUSD",
+  "RLUSD", "USDF", "AUSD", "USDO", "GUSD", "USDP", "LUSD", "SUSD", "EURT", "XAUT", "PAXG",
 ]);
 
 const CORS = {
