@@ -100,8 +100,11 @@ Deno.serve(async (req) => {
       warnings.push("Снимок 00:00 отсутствовал — старт дня зафиксирован приблизительно");
     }
 
-    const since = Date.now() - 7 * 86400_000;
-    const sinceStr = String(since);
+    const nowMs = Date.now();
+    const sinceStr = String(nowMs - 7 * 86400_000);
+    // у asset-эндпоинтов Bybit окно должно быть СТРОГО меньше 7 суток
+    const flowSinceStr = String(nowMs - Math.floor(6.9 * 86400_000));
+    const flowEndStr = String(nowMs);
 
     // ---------- 3. Закрытые сделки (closed-pnl), 7 дней ----------
     let savedTrades = 0;
@@ -179,7 +182,7 @@ Deno.serve(async (req) => {
     // Пополнения
     try {
       const res = await bybitGet("/v5/asset/deposit/query-record",
-        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+        { startTime: flowSinceStr, endTime: flowEndStr, limit: "50" });
       for (const d of res.rows ?? []) {
         if (String(d.status) !== "3") continue; // 3 = success
         const ts2 = new Date(parseInt(d.successAt));
@@ -194,7 +197,7 @@ Deno.serve(async (req) => {
     // Выводы
     try {
       const res = await bybitGet("/v5/asset/withdraw/query-record",
-        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+        { startTime: flowSinceStr, endTime: flowEndStr, limit: "50" });
       for (const w of res.rows ?? []) {
         if (w.status !== "success") continue;
         const ts2 = new Date(parseInt(w.updateTime || w.createTime));
@@ -209,7 +212,7 @@ Deno.serve(async (req) => {
     // Внутренние переводы (FUND <-> UNIFIED): считаем поток относительно UNIFIED
     try {
       const res = await bybitGet("/v5/asset/transfer/query-inter-transfer-list",
-        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+        { startTime: flowSinceStr, endTime: flowEndStr, limit: "50" });
       for (const tr of res.list ?? []) {
         if (tr.status !== "SUCCESS") continue;
         const toUnified = tr.toAccountType === "UNIFIED";
