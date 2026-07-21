@@ -3,7 +3,8 @@
 //   fetch         — {bases: string[]} загрузить/обновить метаданные (≤12 за вызов)
 //   fetch_missing — найти монеты без метаданных или старше 7 дней и обработать ≤12
 //   set_id        — {base, cg_id} ручное исправление сопоставления + перезагрузка
-// Секреты: COINGECKO_KEY (Demo). Необязательные: LLM_PROVIDER (anthropic|openai), LLM_KEY.
+// Секреты: COINGECKO_KEY (Demo; без него — публичный доступ с жёстким лимитом).
+// Необязательные: LLM_PROVIDER (deepseek|anthropic|openai), LLM_KEY.
 // Правило ТЗ 4.5: ничего не выдумывать; команда почти всегда «Нет проверяемых данных».
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -18,12 +19,12 @@ const CORS = {
 
 async function cgGet(path: string, params: Record<string, string> = {}) {
   const key = Deno.env.get("COINGECKO_KEY");
-  if (!key) throw new Error("COINGECKO_KEY не задан в секретах Supabase");
   const qs = new URLSearchParams(params).toString();
+  // без ключа пробуем публичный доступ — работает, но с жёстким лимитом
   const r = await fetch(`${CG}${path}${qs ? "?" + qs : ""}`, {
-    headers: { "x-cg-demo-api-key": key },
+    headers: key ? { "x-cg-demo-api-key": key } : {},
   });
-  if (r.status === 429) throw new Error("CoinGecko: превышен лимит запросов, повторите через минуту");
+  if (r.status === 429) throw new Error("CoinGecko: превышен лимит запросов" + (key ? ", повторите через минуту" : " (без ключа лимит очень мал — нужен Demo-ключ)"));
   if (!r.ok) throw new Error(`CoinGecko ${path}: HTTP ${r.status}`);
   return await r.json();
 }
@@ -47,12 +48,16 @@ async function toRussian(nameCoin: string, textEn: string): Promise<string | nul
       const j = await r.json();
       return j.content?.[0]?.text?.trim() ?? null;
     }
-    if (provider === "openai") {
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    if (provider === "openai" || provider === "deepseek") {
+      const url = provider === "deepseek"
+        ? "https://api.deepseek.com/chat/completions"
+        : "https://api.openai.com/v1/chat/completions";
+      const model = provider === "deepseek" ? "deepseek-chat" : "gpt-4o-mini";
+      const r = await fetch(url, {
         method: "POST",
         headers: { "Authorization": `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-4o-mini", max_tokens: 500,
+          model, max_tokens: 500,
           messages: [{ role: "user", content: prompt }],
         }),
       });
