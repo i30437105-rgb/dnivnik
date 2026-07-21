@@ -95,6 +95,8 @@ span.warn { display: inline; background: none; border: none; padding: 0; color: 
 /* ---------- Таблицы ---------- */
 .tblwrap { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; }
+.tbl tr { display: table-row; } /* защита от классов-флексов на строках */
+.tbl td, .tbl th { display: table-cell; }
 .tbl th { padding: 10px 12px; text-align: left; font-size: 11.5px; color: #8f877d;
   font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
   border-bottom: 1px solid #2c2720; white-space: nowrap; user-select: none; }

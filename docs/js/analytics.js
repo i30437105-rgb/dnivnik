@@ -152,7 +152,7 @@ async function render() {
 }
 
 function clickRows(container, rows, open) {
-  container.querySelectorAll("tr.row").forEach((tr) => {
+  container.querySelectorAll("tr.trow").forEach((tr) => {
     tr.classList.add("clickable");
     tr.onclick = () => {
       const r = rows.find((x) => x.symbol === tr.dataset.rowkey);

@@ -126,7 +126,7 @@ export function sortableTable(container, columns, rows, opts = {}) {
     }
     for (const row of view) {
       const key = opts.rowKey ? opts.rowKey(row) : "";
-      html += `<tr class="row ${opts.expand ? "clickable" : ""}" data-rowkey="${esc(key)}">` +
+      html += `<tr class="trow ${opts.expand ? "clickable" : ""}" data-rowkey="${esc(key)}">` +
         columns.map((c) => `<td>${c.render ? c.render(row) : esc(c.get(row))}</td>`).join("") + `</tr>`;
       if (opts.expand && expanded.has(key)) {
         html += `<tr class="expandrow" data-parent="${esc(key)}"><td colspan="${columns.length}">${opts.expand(row)}</td></tr>`;
@@ -145,7 +145,7 @@ export function sortableTable(container, columns, rows, opts = {}) {
       };
     });
     if (opts.expand) {
-      container.querySelectorAll("tr.row").forEach((tr) => {
+      container.querySelectorAll("tr.trow").forEach((tr) => {
         tr.onclick = (e) => {
           if (e.target.closest("a, button, input, textarea, select, label")) return;
           const k = tr.dataset.rowkey;
