@@ -104,16 +104,22 @@ Deno.serve(async (req) => {
             const { data: yRow } = await sb.from("days").select("start_balance").eq("day", yday).maybeSingle();
             if (yRow) {
               const { data: yFlows } = await sb.from("cash_flows").select("type, amount_usd").eq("day", yday);
-              const net = (yFlows ?? []).reduce((s, f) => s + (f.amount_usd == null ? 0
-                : (f.type === "deposit" || f.type === "transfer_in" ? 1 : -1) * Number(f.amount_usd)), 0);
-              const r = equity - Number(yRow.start_balance) - net;
-              if (r > 0) {
-                const pctV = Number(settings.vault_pct ?? 50);
-                const { error } = await sb.from("vault_ledger").insert({
-                  day: yday, type: "accrual", amount: r * pctV / 100,
-                  note: `${pctV}% от прибыли дня ${(r).toFixed(2)}$`,
-                });
-                if (error && !/duplicate|unique/i.test(error.message)) warnings.push(`Кубышка: ${error.message}`);
+              // защита: движение средств без оценки в USD исказило бы «прибыль» — фиксацию пропускаем
+              if ((yFlows ?? []).some((f) => f.amount_usd == null)) {
+                warnings.push(`Кубышка: фиксация за ${yday} пропущена — есть движение средств без оценки в USD, внесите корректировку вручную`);
+              } else {
+                // пополнения/переводы — это тело депозита, из прибыли исключаются полностью
+                const net = (yFlows ?? []).reduce((s, f) =>
+                  s + (f.type === "deposit" || f.type === "transfer_in" ? 1 : -1) * Number(f.amount_usd), 0);
+                const r = equity - Number(yRow.start_balance) - net;
+                if (r > 0) {
+                  const pctV = Number(settings.vault_pct ?? 50);
+                  const { error } = await sb.from("vault_ledger").insert({
+                    day: yday, type: "accrual", amount: r * pctV / 100,
+                    note: `${pctV}% от прибыли дня ${(r).toFixed(2)}$`,
+                  });
+                  if (error && !/duplicate|unique/i.test(error.message)) warnings.push(`Кубышка: ${error.message}`);
+                }
               }
             }
           }

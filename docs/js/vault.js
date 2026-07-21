@@ -1,5 +1,5 @@
 // Вкладка «Кубышка»: неприкосновенный резерв — 50% прибыли каждого плюсового дня (вариант А)
-import { loadVault, loadLatestSnapshot, loadDaysRange, saveSettings, runSync } from "./api.js";
+import { loadVault, loadLatestSnapshot, loadDaysRange, loadCashFlows, saveSettings, runSync } from "./api.js";
 import { state, esc, usd, pct, fmtRu, fmtDay, fmtDT, todayLocal, sortableTable, notify, busyButton } from "./util.js";
 
 let root;
@@ -30,8 +30,8 @@ async function render() {
   const s = state.settings;
   const startDay = s.vault_start_day ?? todayLocal();
   const today = todayLocal();
-  const [ledger, lastSnap, days] = await Promise.all([
-    loadVault(), loadLatestSnapshot(), loadDaysRange(startDay, today),
+  const [ledger, lastSnap, days, flows] = await Promise.all([
+    loadVault(), loadLatestSnapshot(), loadDaysRange(startDay, today), loadCashFlows(startDay, today),
   ]);
 
   root.querySelector("#vl-status").innerHTML = lastSnap
@@ -44,14 +44,20 @@ async function render() {
   const equity = lastSnap ? Number(lastSnap.equity) : null;
   const working = equity != null ? Math.max(equity - vault, 0) : null;
   const base = Number(s.vault_base) || days[0]?.start_balance || 0;
-  // заработано = сумма дневных результатов с точки отсчёта (потоки уже исключены)
+  // заработано = сумма дневных результатов с точки отсчёта (пополнения/выводы исключены)
   const earned = days.reduce((sum, d) => {
     const r = d.end_equity != null ? Number(d.end_equity) - Number(d.start_balance) - (Number(d.net_flow) || 0) : 0;
     return sum + r;
   }, 0);
+  // вложенный капитал = стартовая база + все пополнения тела депозита; % прироста считаем от него
+  const depositsIn = flows.filter((f) => (f.type === "deposit" || f.type === "transfer_in") && f.amount_usd != null)
+    .reduce((sum, f) => sum + Number(f.amount_usd), 0);
+  const invested = base + depositsIn;
+  const hasUnpriced = flows.some((f) => f.amount_usd == null);
 
   root.querySelector("#vl-body").innerHTML = `
     ${equity != null && vault > equity ? `<div class="warn">⚠ Кубышка ($${fmtRu(vault, 2)}) больше текущего баланса — рабочий капитал исчерпан, торговлю стоит остановить.</div>` : ""}
+    ${hasUnpriced ? `<div class="warn">⚠ Есть движение средств, которое не удалось оценить в USD — цифры «заработано» и автофиксация кубышки могут быть неточными. Пополняй счёт стейблкоинами (USDT/USDC).</div>` : ""}
     <section style="margin-bottom:26px">
       <div class="cards">
         <div class="card hero pos"><div class="k">Кубышка — можно вывести</div>
@@ -64,8 +70,8 @@ async function render() {
           <div class="v">${working != null ? usd(working) : "—"}</div>
           <div class="muted small">баланс минус кубышка; от него считаются цель дня и лимит убытка</div></div>
         <div class="card"><div class="k">Заработано с ${fmtDay(startDay)}</div>
-          <div class="v ${earned > 0 ? "green" : earned < 0 ? "red" : ""}">${usd(earned, { sign: true })} <span class="hint">${base > 0 ? pct(earned / base * 100) : ""}</span></div>
-          <div class="muted small">торговый результат, пополнения и выводы не учитываются</div></div>
+          <div class="v ${earned > 0 ? "green" : earned < 0 ? "red" : ""}">${usd(earned, { sign: true })} <span class="hint">${invested > 0 ? pct(earned / invested * 100) : ""}</span></div>
+          <div class="muted small">чистый торговый результат; % — от вложенного капитала (${usd(invested)}). Пополнения увеличивают только тело депозита</div></div>
         <div class="card"><div class="k">Отложено за всё время</div>
           <div class="v">${usd(accrued)}</div>
           <div class="muted small">по ${fmtRu(Number(s.vault_pct), 0)}% с каждого прибыльного дня</div></div>
