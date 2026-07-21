@@ -2,12 +2,16 @@
 import { loadCoin, loadInstrumentsFor, fetchKline, fetchMetaFor, setCoinId } from "./api.js";
 import { esc, usd, pct, price, fmtDT, openModal } from "./util.js";
 
-// Диапазоны графика: [подпись, категория интервала Bybit, свечей]
+// Таймфреймы графика: interval Bybit, сколько свечей грузим и какая это глубина истории
 const RANGES = {
-  "6h-5m": { label: "6 ч / 5 мин", interval: "5", limit: 72 },
-  "24h-15m": { label: "24 ч / 15 мин", interval: "15", limit: 96 },
-  "7d-1h": { label: "7 дн / 1 час", interval: "60", limit: 168 },
+  "1": { label: "1 мин", interval: "1", limit: 240, depth: "последние 4 часа" },
+  "5": { label: "5 мин", interval: "5", limit: 288, depth: "последние сутки" },
+  "15": { label: "15 мин", interval: "15", limit: 192, depth: "последние 2 суток" },
+  "60": { label: "1 час", interval: "60", limit: 168, depth: "последние 7 дней" },
+  "240": { label: "4 часа", interval: "240", limit: 180, depth: "последний месяц" },
+  "D": { label: "День", interval: "D", limit: 365, depth: "последний год" },
 };
+const DEFAULT_TF = "15";
 
 export async function openCoinCard(base, symbol) {
   const modal = openModal(`<div class="loading">Загружаю ${esc(base)}…</div>`, { wide: true });
@@ -64,9 +68,12 @@ function render(modal, base, symbol, coin, instruments) {
       <div>
         <h3>Рынок</h3>
         <div id="cc-market" class="muted">загружаю…</div>
-        <div class="seg" id="cc-ranges" style="margin:8px 0">
-          ${Object.entries(RANGES).map(([k, r]) =>
-            `<button class="btn range" data-r="${k}">${r.label}</button>`).join("")}
+        <div class="row spread" style="margin:8px 0">
+          <div class="seg" id="cc-ranges">
+            ${Object.entries(RANGES).map(([k, r]) =>
+              `<button class="btn range" data-r="${k}">${r.label}</button>`).join("")}
+          </div>
+          <span id="cc-tf-label" class="muted small"></span>
         </div>
         <div id="cc-chart" style="height:280px;border:1px solid var(--chart-grid);border-radius:10px;overflow:hidden"></div>
         <div id="cc-updated" class="muted small"></div>
@@ -87,12 +94,14 @@ function render(modal, base, symbol, coin, instruments) {
   const drawRange = async (key) => {
     modal.el.querySelectorAll(".range").forEach((b) => b.classList.toggle("primary", b.dataset.r === key));
     const r = RANGES[key];
+    modal.el.querySelector("#cc-tf-label").textContent = `Таймфрейм: ${r.label} · ${r.depth}`;
     try {
       const res = await fetchKline("linear", symbol, r.interval, r.limit);
-      const candles = (res.list ?? []).map((c) => ({
-        time: Math.floor(parseInt(c[0]) / 1000),
-        open: +c[1], high: +c[2], low: +c[3], close: +c[4],
-      })).reverse();
+      const candles = (res.list ?? []).map((c) => (r.interval === "D"
+        ? { time: new Date(parseInt(c[0])).toISOString().slice(0, 10),
+            open: +c[1], high: +c[2], low: +c[3], close: +c[4] }
+        : { time: Math.floor(parseInt(c[0]) / 1000),
+            open: +c[1], high: +c[2], low: +c[3], close: +c[4] })).reverse();
       if (!chart) {
         const css = getComputedStyle(document.documentElement);
         const tk = (name) => css.getPropertyValue(name).trim();
@@ -109,9 +118,12 @@ function render(modal, base, symbol, coin, instruments) {
         });
       }
       series.setData(candles);
+      chart.timeScale().applyOptions({ timeVisible: r.interval !== "D" });
       chart.timeScale().fitContent();
-      // сводка по последним данным
-      if (candles.length) {
+      // сводка «за 24 часа» — только если загруженная глубина реально покрывает сутки
+      const spanOk = candles.length > 1 && r.interval !== "D" &&
+        (candles[candles.length - 1].time - candles[0].time) >= 86400;
+      if (spanOk) {
         const last = candles[candles.length - 1];
         const dayAgo = candles.filter((c) => c.time >= last.time - 86400);
         const hi = Math.max(...dayAgo.map((c) => c.high));
@@ -120,13 +132,16 @@ function render(modal, base, symbol, coin, instruments) {
         const ch = first ? (last.close - first.open) / first.open * 100 : null;
         modal.el.querySelector("#cc-market").innerHTML =
           `Цена: <b>${price(last.close)}</b> · за 24 ч: ${ch != null ? pct(ch) : "—"} · максимум: ${price(hi)} · минимум: ${price(lo)}`;
-        modal.el.querySelector("#cc-updated").textContent =
-          "Рыночные данные обновлены: " + fmtDT(new Date().toISOString());
+      } else if (candles.length) {
+        const last = candles[candles.length - 1];
+        modal.el.querySelector("#cc-market").innerHTML = `Цена: <b>${price(last.close)}</b>`;
       }
+      modal.el.querySelector("#cc-updated").textContent =
+        "Рыночные данные обновлены: " + fmtDT(new Date().toISOString());
     } catch (e) {
       modal.el.querySelector("#cc-chart").innerHTML = `<div class="warn">График недоступен: ${esc(e.message)}</div>`;
     }
   };
   modal.el.querySelectorAll(".range").forEach((b) => b.onclick = () => drawRange(b.dataset.r));
-  drawRange("24h-15m");
+  drawRange(DEFAULT_TF);
 }
