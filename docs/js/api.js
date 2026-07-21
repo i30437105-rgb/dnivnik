@@ -93,6 +93,13 @@ export async function saveDayOverride(day, patch) {
   if (error) throw new Error(error.message);
 }
 
+// ---------- Кубышка ----------
+
+export async function loadVault() {
+  const { data } = await sb.from("vault_ledger").select("*").order("day").order("id");
+  return data ?? [];
+}
+
 // ---------- Стратегии ----------
 
 export async function loadStrategies(includeArchived = false) {

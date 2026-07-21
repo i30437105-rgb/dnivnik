@@ -1,7 +1,7 @@
 // Вкладка «Дневник трейдера» (ТЗ §5): сводка дня, календарь, график, статистика, сделки
 import {
   runSync, loadDaysRange, loadSnapshots, loadLatestSnapshot,
-  loadTrades, loadCashFlows, loadSyncStatus, loadStrategies,
+  loadTrades, loadCashFlows, loadSyncStatus, loadStrategies, loadVault,
 } from "./api.js";
 import {
   state, esc, usd, pct, fmtRu, fmtDT, fmtDay, fmtDur, todayLocal, addDays,
@@ -107,17 +107,27 @@ const dayLossUsd = (d, B0) => {
 };
 const dayResult = (d) => d.end_equity != null ? d.end_equity - d.start_balance - (d.net_flow || 0) : null;
 
+// Кубышка: сумма отложенного к началу дня (записи за предыдущие дни)
+let vaultLedger = [];
+const vaultBefore = (dayStr) => vaultLedger
+  .filter((l) => l.day < dayStr)
+  .reduce((sum, l) => sum + Number(l.amount), 0);
+// Рабочий стартовый капитал дня = старт минус кубышка; от него цель и лимит
+const workStart = (d) => Math.max(Number(d.start_balance) - vaultBefore(d.day), 0);
+
 async function render() {
   computeRange();
   const today = todayLocal();
-  const [days, trades, flows, sync, strategies, lastSnap] = await Promise.all([
+  const [days, trades, flows, sync, strategies, lastSnap, ledger] = await Promise.all([
     loadDaysRange(period.from, period.to),
     loadTrades(period.from, period.to),
     loadCashFlows(period.from, period.to),
     loadSyncStatus(),
     loadStrategies(true),
     loadLatestSnapshot(),
+    loadVault(),
   ]);
+  vaultLedger = ledger;
   const stratName = new Map(strategies.map((s) => [s.id, s.name]));
 
   // Кнопки-состояния
@@ -163,12 +173,14 @@ function renderSummary(d, lastSnap, diary) {
     return;
   }
   const B0 = Number(d.start_balance);
+  const vaultV = Math.min(vaultBefore(d.day), B0);
+  const B0w = B0 - vaultV; // рабочий капитал: без кубышки
   const Bt = lastSnap ? Number(lastSnap.equity) : Number(d.end_equity ?? B0);
   const res = Bt - B0 - (d.net_flow || 0);
-  const resPct = B0 > 0 ? res / B0 * 100 : 0;
-  const goalUsd = B0 * dayGoalPct(d) / 100;
+  const resPct = B0w > 0 ? res / B0w * 100 : 0;
+  const goalUsd = B0w * dayGoalPct(d) / 100;
   const left = Math.max(goalUsd - res, 0);
-  const lossUsd = dayLossUsd(d, B0);
+  const lossUsd = dayLossUsd(d, B0w);
   const lossLeft = Math.max(lossUsd - Math.max(-res, 0), 0);
   const goalDone = res >= goalUsd;
   const stopHit = -res >= lossUsd;
@@ -177,12 +189,12 @@ function renderSummary(d, lastSnap, diary) {
     ${d.start_accurate ? "" : `<div class="warn" style="grid-column:1/-1">⚠ Отсчёт этого дня начат не ровно с полуночи (снимок 00:00 отсутствовал) — цифры дня приблизительные.
       Со следующего дня сервер снимает баланс ровно в 00:00 автоматически, и всё будет точно.</div>`}
     <div class="card"><div class="k">Баланс на начало дня${d.start_accurate ? "" : ` <span class="tag yellow">≈ приблизительно</span>`}</div>
-      <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}</div></div>
+      <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}${vaultV > 0 ? ` · в кубышке ${usd(vaultV)} → в работе ${usd(B0w)}` : ""}</div></div>
     <div class="card"><div class="k">Сейчас на счету</div><div class="v">${usd(Bt)}</div>
       <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}</div></div>
     <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня</div>
       <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint ${res > 0 ? "green" : res < 0 ? "red" : ""}">${pct(resPct)}</span></div>
-      <div class="muted small">на сколько вырос счёт с начала дня: закрытые сделки + открытые позиции − комиссии${(d.net_flow || 0) !== 0 ? " (пополнения/выводы исключены)" : ""}</div></div>
+      <div class="muted small">на сколько вырос счёт с начала дня: закрытые сделки + открытые позиции − комиссии${(d.net_flow || 0) !== 0 ? " (пополнения/выводы исключены)" : ""}${vaultV > 0 ? "; % — от рабочего капитала" : ""}</div></div>
     <div class="card"><div class="k">Закрыто сделками за день</div>
       <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
       <div class="muted small">чистая прибыль ${d.trades_count} закрытых сделок</div></div>
@@ -251,8 +263,8 @@ async function openDayModal(dayStr, d, allTrades) {
   const res = dayResult(d);
   const dayTrades = allTrades.filter((t) => t.day === dayStr);
   const flows = (await loadCashFlows(dayStr, dayStr));
-  const goalUsd = d.start_balance * dayGoalPct(d) / 100;
-  const lossUsd = dayLossUsd(d, d.start_balance);
+  const goalUsd = workStart(d) * dayGoalPct(d) / 100;
+  const lossUsd = dayLossUsd(d, workStart(d));
   const symbols = [...new Set(dayTrades.map((t) => t.symbol))];
   const modal = openModal(`
     <h2>${fmtDay(dayStr)}</h2>
@@ -294,8 +306,8 @@ async function renderChart(days, today) {
       points = snaps.map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), value: Number(s.equity) }));
       const d = days.find((x) => x.day === day);
       if (d && !isPct) {
-        goalLine = Number(d.start_balance) + d.start_balance * dayGoalPct(d) / 100;
-        lossLine = Number(d.start_balance) - dayLossUsd(d, Number(d.start_balance));
+        goalLine = Number(d.start_balance) + workStart(d) * dayGoalPct(d) / 100;
+        lossLine = Number(d.start_balance) - dayLossUsd(d, workStart(d));
       }
     }
   }
@@ -336,7 +348,7 @@ function renderStats(days, trades, stratName) {
   const fees = trades.reduce((s, t) => s + (Number(t.open_fee) || 0) + (Number(t.close_fee) || 0), 0);
   const durs = trades.filter((t) => t.opened_at && t.closed_at)
     .map((t) => new Date(t.closed_at) - new Date(t.opened_at));
-  const goalDays = withData.filter((d) => (dayResult(d) ?? 0) >= d.start_balance * dayGoalPct(d) / 100).length;
+  const goalDays = withData.filter((d) => (dayResult(d) ?? 0) >= workStart(d) * dayGoalPct(d) / 100).length;
   let peak = 0, dd = 0, cum = 0;
   for (const r of results) { cum += r; peak = Math.max(peak, cum); dd = Math.max(dd, peak - cum); }
 

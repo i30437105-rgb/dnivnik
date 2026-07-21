@@ -94,6 +94,31 @@ Deno.serve(async (req) => {
       // точный старт дня: создаём или уточняем существующий приблизительный
       await sb.from("days").upsert(
         { day: today, start_balance: equity, start_accurate: true }, { onConflict: "day" });
+
+      // Кубышка (вариант А): в полночь откладываем % от прибыли ЗАВЕРШИВШЕГОСЯ дня.
+      // Итог вчера = equity сейчас (00:00) − старт вчера − вчерашние пополнения/выводы.
+      try {
+        if (settings?.vault_start_day) {
+          const yday = localParts(new Date(now.getTime() - 86400_000), tz).date;
+          if (yday >= settings.vault_start_day) {
+            const { data: yRow } = await sb.from("days").select("start_balance").eq("day", yday).maybeSingle();
+            if (yRow) {
+              const { data: yFlows } = await sb.from("cash_flows").select("type, amount_usd").eq("day", yday);
+              const net = (yFlows ?? []).reduce((s, f) => s + (f.amount_usd == null ? 0
+                : (f.type === "deposit" || f.type === "transfer_in" ? 1 : -1) * Number(f.amount_usd)), 0);
+              const r = equity - Number(yRow.start_balance) - net;
+              if (r > 0) {
+                const pctV = Number(settings.vault_pct ?? 50);
+                const { error } = await sb.from("vault_ledger").insert({
+                  day: yday, type: "accrual", amount: r * pctV / 100,
+                  note: `${pctV}% от прибыли дня ${(r).toFixed(2)}$`,
+                });
+                if (error && !/duplicate|unique/i.test(error.message)) warnings.push(`Кубышка: ${error.message}`);
+              }
+            }
+          }
+        }
+      } catch (e) { warnings.push(`Кубышка: ${String(e)}`); }
     } else if (!dayRow) {
       // снимок 00:00 пропущен — берём первый доступный, помечаем «приблизительно» (по ТЗ 5.2)
       await sb.from("days").insert({ day: today, start_balance: equity, start_accurate: false });
@@ -228,6 +253,27 @@ Deno.serve(async (req) => {
         });
       }
     } catch (e) { warnings.push(`Переводы: ${String(e)}`); }
+
+    // ---------- 5б. Реальный вывод с биржи списывает кубышку ----------
+    try {
+      if (settings?.vault_start_day) {
+        const { data: outs } = await sb.from("cash_flows").select("id, day, amount_usd")
+          .in("type", ["withdrawal", "transfer_out"]).gte("day", settings.vault_start_day);
+        if (outs?.length) {
+          const { data: led } = await sb.from("vault_ledger").select("amount, note");
+          const noted = new Set((led ?? []).map((l) => l.note));
+          let bal = (led ?? []).reduce((s, l) => s + Number(l.amount), 0);
+          for (const o of outs) {
+            const key = `flow:${o.id}`;
+            if (noted.has(key) || o.amount_usd == null) continue;
+            const take = Math.min(bal, Number(o.amount_usd));
+            if (take <= 0) continue;
+            await sb.from("vault_ledger").insert({ day: o.day, type: "withdrawal", amount: -take, note: key });
+            bal -= take;
+          }
+        }
+      }
+    } catch (e) { warnings.push(`Кубышка/выводы: ${String(e)}`); }
 
     // ---------- 6. Статус ----------
     await sb.from("sync_status").upsert({

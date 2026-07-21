@@ -2,6 +2,7 @@
 import { getSession, signIn, signOut } from "./supa.js";
 import { loadSettings } from "./api.js";
 import { initDiary } from "./diary.js";
+import { initVault } from "./vault.js";
 import { initAnalytics } from "./analytics.js";
 import { initSettings } from "./settings.js";
 import { esc } from "./util.js";
@@ -45,6 +46,7 @@ function renderLogin() {
 
 const TABS = [
   { id: "diary", label: "Дневник", icon: "📓", init: initDiary },
+  { id: "vault", label: "Кубышка", icon: "💰", init: initVault },
   { id: "analytics", label: "Аналитика монет", icon: "📊", init: initAnalytics },
   { id: "settings", label: "Настройки", icon: "⚙️", init: initSettings },
 ];
