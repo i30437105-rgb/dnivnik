@@ -96,7 +96,12 @@ async function fetchCoin(sb: any, base: string, forcedId?: string) {
   });
   const descEn: string = (c.description?.en ?? "").trim();
   const descRuCg: string = (c.description?.ru ?? "").trim();
-  const descRu = descRuCg || await toRussian(c.name ?? base, descEn);
+  // не тратим LLM повторно: если английский текст не изменился — оставляем прежний перевод
+  const { data: existing } = await sb.from("coins")
+    .select("description_en, description_ru").eq("base", base).maybeSingle();
+  const reuse = existing?.description_ru && existing?.description_en === (descEn || null)
+    ? existing.description_ru : null;
+  const descRu = descRuCg || reuse || await toRussian(c.name ?? base, descEn);
   const contract = c.platforms && typeof c.platforms === "object"
     ? Object.values(c.platforms).find((v) => v) ?? null : null;
   await sb.from("coins").upsert({
