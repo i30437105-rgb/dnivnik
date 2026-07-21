@@ -10,7 +10,6 @@ const TZ_LIST = [
 
 export function initSettings(container) {
   const s = state.settings;
-  const F = s.filters ?? {};
   container.innerHTML = `
     <section class="block"><h2>Дневник</h2>
       <div class="form">
@@ -33,15 +32,8 @@ export function initSettings(container) {
       </div>
     </section>
     <section class="block"><h2>Пороги аналитики</h2>
-      <div class="form">
-        <label>Новый листинг: не старше, часов <input id="f-lh" type="number" min="1" value="${F.listing_hours ?? 72}"></label>
-        <label><input id="f-rs" type="checkbox" ${F.require_spot !== false ? "checked" : ""}> Требовать активную спотовую пару</label>
-        <label>Возраст монеты (осн. стратегия), дней ≥ <input id="f-age" type="number" min="0" value="${F.age_days ?? 365}"></label>
-        <label>Мин. спотовый оборот 24 ч, $ <input id="f-turn" type="number" min="0" step="100000" value="${F.min_spot_turnover ?? 5000000}"></label>
-        <label>Волатильность за 6 ч, % ≥ <input id="f-vol" type="number" min="0" step="0.5" value="${F.vol6h_pct ?? 10}"></label>
-        <label>Всплеск объёма: рост ≥ ×<input id="f-ratio" type="number" min="1" step="0.5" value="${F.spike_ratio ?? 5}"></label>
-        <label>Всплеск объёма: мин. оборот 24 ч, $ <input id="f-sturn" type="number" min="0" step="100000" value="${F.spike_min_turnover ?? 5000000}"></label>
-      </div>
+      <p class="muted">Пороги фильтров (листинги, волатильность, всплеск объёма) настраиваются прямо на вкладке
+      «📊 Аналитика монет» — блок «⚙️ Пороги фильтров» над таблицами.</p>
     </section>
     <div class="toolbar"><button id="st-save" class="btn primary">Сохранить настройки</button><span id="st-msg" class="muted"></span></div>
     <section class="block"><h2>Справочник стратегий</h2>
@@ -62,15 +54,6 @@ export function initSettings(container) {
         loss_limit_mode: container.querySelector("#st-lossmode").value,
         daily_loss_pct: Number(container.querySelector("#st-losspct").value),
         daily_loss_usd: container.querySelector("#st-lossusd").value === "" ? null : Number(container.querySelector("#st-lossusd").value),
-        filters: {
-          listing_hours: Number(container.querySelector("#f-lh").value),
-          require_spot: container.querySelector("#f-rs").checked,
-          age_days: Number(container.querySelector("#f-age").value),
-          min_spot_turnover: Number(container.querySelector("#f-turn").value),
-          vol6h_pct: Number(container.querySelector("#f-vol").value),
-          spike_ratio: Number(container.querySelector("#f-ratio").value),
-          spike_min_turnover: Number(container.querySelector("#f-sturn").value),
-        },
       });
       msg.textContent = "✓ Сохранено. Новые пороги применятся при следующем запуске анализа.";
     } catch (e) { msg.textContent = "Ошибка: " + e.message; }

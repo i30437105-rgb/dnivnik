@@ -1,17 +1,42 @@
 // Вкладка «Аналитика монет»: три блока по ТЗ §4
-import { runAnalyze, loadLatestRun, fetchMetaMissing } from "./api.js";
-import { esc, usd, pct, price, fmtDT, sortableTable, busyButton, hoursMinutes } from "./util.js";
+import { runAnalyze, loadLatestRun, fetchMetaMissing, saveSettings } from "./api.js";
+import { state, esc, usd, pct, price, fmtDT, sortableTable, busyButton, hoursMinutes } from "./util.js";
 import { openCoinCard } from "./coincard.js";
 
 let root;
 
 export function initAnalytics(container) {
   root = container;
+  const F = state.settings?.filters ?? {};
   root.innerHTML = `
     <div class="toolbar">
       <button id="an-run" class="btn primary">Запустить анализ</button>
       <span id="an-status" class="status"></span>
     </div>
+    <details class="block" id="an-filters">
+      <summary><b>⚙️ Пороги фильтров</b> <span class="hint">поменяй значения и нажми «Сохранить и запустить»</span></summary>
+      <div class="form" style="margin-top:10px">
+        <label>🆕 Листинги: не старше, часов
+          <input id="f2-lh" type="number" min="1" value="${F.listing_hours ?? 168}">
+          <span class="hint">168 часов = 7 суток</span></label>
+        <label style="align-self:end"><input id="f2-rs" type="checkbox" ${F.require_spot !== false ? "checked" : ""}>
+          Только монеты со спотовой парой <span class="hint">(выкл — покажет и токен-акции без спота)</span></label>
+        <label>⚡ Волатильные: возраст монеты от, дней
+          <input id="f2-age" type="number" min="0" value="${F.age_days ?? 365}"></label>
+        <label>⚡ Волатильные: оборот спота 24ч от, $ млн
+          <input id="f2-turn" type="number" min="0" step="0.1" value="${(F.min_spot_turnover ?? 1e6) / 1e6}"></label>
+        <label>⚡ Волатильные: волатильность за 6ч от, %
+          <input id="f2-vol" type="number" min="0" step="0.5" value="${F.vol6h_pct ?? 3}"></label>
+        <label>📈 Всплеск: рост объёма от, раз (×)
+          <input id="f2-ratio" type="number" min="1" step="0.5" value="${F.spike_ratio ?? 5}"></label>
+        <label>📈 Всплеск: оборот спота 24ч от, $ млн
+          <input id="f2-sturn" type="number" min="0" step="0.1" value="${(F.spike_min_turnover ?? 1e6) / 1e6}"></label>
+      </div>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="an-saverun" class="btn primary">Сохранить пороги и запустить</button>
+        <span id="an-fmsg" class="muted"></span>
+      </div>
+    </details>
     <div id="an-warn"></div>
     <section class="block">
       <h2>🆕 Новые листинги <span class="hint">фьючерс появился на Bybit не более 72 ч назад — высокий риск</span></h2>
@@ -26,14 +51,32 @@ export function initAnalytics(container) {
       <div id="an-spike" class="tblwrap"></div>
     </section>`;
 
-  busyButton(root.querySelector("#an-run"), async () => {
+  const doRun = async () => {
     const res = await runAnalyze();
     await render();
     if (res.errors?.length) {
       root.querySelector("#an-warn").innerHTML =
         `<div class="warn">⚠ Анализ выполнен частично: ${esc(res.errors.join("; "))}. Старые данные не удалены.</div>`;
     }
-    fetchMetaMissing().catch(() => { /* метаданные подтянутся позже, когда будет ключ */ });
+    fetchMetaMissing().catch(() => { /* метаданные подтянутся в следующий раз */ });
+  };
+  busyButton(root.querySelector("#an-run"), doRun);
+  busyButton(root.querySelector("#an-saverun"), async () => {
+    await saveSettings({
+      filters: {
+        ...state.settings.filters,
+        listing_hours: Number(root.querySelector("#f2-lh").value),
+        require_spot: root.querySelector("#f2-rs").checked,
+        age_days: Number(root.querySelector("#f2-age").value),
+        min_spot_turnover: Number(root.querySelector("#f2-turn").value) * 1e6,
+        vol6h_pct: Number(root.querySelector("#f2-vol").value),
+        spike_ratio: Number(root.querySelector("#f2-ratio").value),
+        spike_min_turnover: Number(root.querySelector("#f2-sturn").value) * 1e6,
+      },
+    });
+    root.querySelector("#an-fmsg").textContent = "✓ пороги сохранены, ищу…";
+    await doRun();
+    root.querySelector("#an-fmsg").textContent = "✓ готово";
   });
 
   render().catch((e) => { root.querySelector("#an-status").textContent = "Ошибка: " + e.message; });
