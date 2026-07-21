@@ -1,18 +1,28 @@
-// ДНЕВНИК — синхронизация с Bybit (Supabase Edge Function, Deno)
-// Тянет закрытые сделки (closed-pnl) и баланс; фиксирует баланс начала дня.
-// Секреты (Dashboard → Edge Functions → Secrets) — нужны только ДВА:
-//   BYBIT_KEY, BYBIT_SECRET — read-only ключ Ивана
-// (URL проекта и service-ключ Supabase подставляет автоматически)
+// ДНЕВНИК v2 — синхронизация с Bybit (Supabase Edge Function, Deno)
+// Задачи (body.task):
+//   auto      — cron каждые 10 минут: снимок equity + импорт; в 00:0x местного
+//               времени сам становится day_start (снимок начала дня)
+//   day_start — принудительный снимок начала дня
+//   manual    — кнопка «Обновить» на сайте
+// Секреты: BYBIT_KEY, BYBIT_SECRET (read-only, права: Unified Trading + Assets — чтение)
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY подставляются автоматически.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const API = "https://api.bybit.com";
+const STABLES = new Set(["USDT", "USDC", "DAI", "USD", "BUSD", "TUSD"]);
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
 
 async function sign(secret: string, payload: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function bybitGet(path: string, params: Record<string, string>) {
@@ -29,71 +39,212 @@ async function bybitGet(path: string, params: Record<string, string>) {
     },
   });
   const j = await r.json();
-  if (j.retCode !== 0) throw new Error(`Bybit ${path}: ${j.retMsg}`);
+  if (j.retCode !== 0) throw new Error(`Bybit ${path}: [${j.retCode}] ${j.retMsg}`);
   return j.result;
 }
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+// Дата и время в часовом поясе пользователя
+function localParts(d: Date, tz: string) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const p = Object.fromEntries(fmt.formatToParts(d).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) % 24, minute: Number(p.minute) };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const startedAt = Date.now();
+  const warnings: string[] = [];
   try {
-    const sb = createClient(
-      Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SB_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SB_SERVICE_KEY")!);
+    const body = await req.json().catch(() => ({}));
+    const task: string = body.task ?? "manual";
 
-    // 1) Баланс (UNIFIED equity)
+    const sb = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const { data: settings } = await sb.from("user_settings").select("*").eq("id", 1).single();
+    const tz = settings?.timezone ?? "Europe/Moscow";
+    const now = new Date();
+    const local = localParts(now, tz);
+    const today = local.date;
+
+    // ---------- 1. Снимок баланса (total equity, Unified) ----------
     const wallet = await bybitGet("/v5/account/wallet-balance", { accountType: "UNIFIED" });
     const equity = parseFloat(wallet.list?.[0]?.totalEquity ?? "0");
 
-    // 2) Закрытые сделки за последние 7 дней (с пагинацией)
-    const start = (Date.now() - 7 * 86400_000).toString();
-    let cursor = "";
-    let saved = 0;
-    let todayPnl = 0;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    do {
-      const res = await bybitGet("/v5/position/closed-pnl", {
-        category: "linear", startTime: start, limit: "100",
-        ...(cursor ? { cursor } : {}),
-      });
-      for (const t of res.list ?? []) {
-        const closedAt = new Date(parseInt(t.updatedTime));
-        const pnl = parseFloat(t.closedPnl);
-        if (closedAt.toISOString().slice(0, 10) === todayStr) todayPnl += pnl;
-        const { error } = await sb.from("trades").upsert({
-          id: t.orderId,
-          symbol: t.symbol,
-          side: t.side === "Sell" ? "Buy" : "Sell", // closed-pnl отдаёт сторону ЗАКРЫТИЯ
-          qty: parseFloat(t.qty),
-          entry_price: parseFloat(t.avgEntryPrice),
-          exit_price: parseFloat(t.avgExitPrice),
-          pnl,
-          opened_at: new Date(parseInt(t.createdTime)).toISOString(),
-          closed_at: closedAt.toISOString(),
-        }, { onConflict: "id", ignoreDuplicates: false });
-        if (!error) saved++;
-      }
-      cursor = res.nextPageCursor ?? "";
-    } while (cursor);
+    // Является ли этот запуск снимком начала дня
+    const { data: existingStart } = await sb.from("account_snapshots")
+      .select("id").eq("day", today).eq("kind", "day_start").limit(1);
+    const isDayStart = task === "day_start" ||
+      (task === "auto" && local.hour === 0 && local.minute < 10 && !existingStart?.length);
 
-    // 3) Баланс начала дня: первый синк за день фиксирует equity минус уже сделанный за день pnl
-    const { data: dayRow } = await sb.from("days").select("day").eq("day", todayStr).maybeSingle();
-    if (!dayRow) {
-      await sb.from("days").insert({ day: todayStr, start_balance: equity - todayPnl });
+    await sb.from("account_snapshots").insert({
+      ts: now.toISOString(), equity,
+      kind: isDayStart ? "day_start" : (task === "auto" ? "auto" : "manual"),
+      day: today, accurate: true,
+    });
+
+    // ---------- 2. Строка дня ----------
+    const { data: dayRow } = await sb.from("days").select("day, start_accurate").eq("day", today).maybeSingle();
+    if (isDayStart) {
+      // точный старт дня: создаём или уточняем существующий приблизительный
+      await sb.from("days").upsert(
+        { day: today, start_balance: equity, start_accurate: true }, { onConflict: "day" });
+    } else if (!dayRow) {
+      // снимок 00:00 пропущен — берём первый доступный, помечаем «приблизительно» (по ТЗ 5.2)
+      await sb.from("days").insert({ day: today, start_balance: equity, start_accurate: false });
+      warnings.push("Снимок 00:00 отсутствовал — старт дня зафиксирован приблизительно");
     }
 
-    return new Response(JSON.stringify({ ok: true, equity, saved, todayPnl }), {
-      headers: { "Content-Type": "application/json", ...CORS },
-    });
+    const since = Date.now() - 7 * 86400_000;
+    const sinceStr = String(since);
+
+    // ---------- 3. Закрытые сделки (closed-pnl), 7 дней ----------
+    let savedTrades = 0;
+    {
+      let cursor = "";
+      do {
+        const res = await bybitGet("/v5/position/closed-pnl", {
+          category: "linear", startTime: sinceStr, limit: "100",
+          ...(cursor ? { cursor } : {}),
+        });
+        for (const t of res.list ?? []) {
+          const closedAt = new Date(parseInt(t.updatedTime));
+          const { error } = await sb.from("trades").upsert({
+            id: t.orderId,
+            symbol: t.symbol,
+            side: t.side === "Sell" ? "Buy" : "Sell", // closed-pnl отдаёт сторону ЗАКРЫТИЯ
+            qty: parseFloat(t.qty),
+            entry_price: parseFloat(t.avgEntryPrice),
+            exit_price: parseFloat(t.avgExitPrice),
+            pnl: parseFloat(t.closedPnl),
+            open_fee: t.openFee != null ? parseFloat(t.openFee) : null,
+            close_fee: t.closeFee != null ? parseFloat(t.closeFee) : null,
+            leverage: t.leverage ?? null,
+            opened_at: new Date(parseInt(t.createdTime)).toISOString(),
+            closed_at: closedAt.toISOString(),
+            day: localParts(closedAt, tz).date,
+            raw: t,
+          }, { onConflict: "id" });
+          if (!error) savedTrades++;
+        }
+        cursor = res.nextPageCursor ?? "";
+      } while (cursor);
+    }
+
+    // ---------- 4. Исполнения (fills), 7 дней ----------
+    let savedExecs = 0;
+    try {
+      let cursor = "";
+      do {
+        const res = await bybitGet("/v5/execution/list", {
+          category: "linear", startTime: sinceStr, limit: "100",
+          ...(cursor ? { cursor } : {}),
+        });
+        for (const e of res.list ?? []) {
+          if (e.execType && e.execType !== "Trade") continue;
+          const { error } = await sb.from("executions").upsert({
+            id: e.execId,
+            order_id: e.orderId,
+            symbol: e.symbol,
+            side: e.side,
+            price: parseFloat(e.execPrice),
+            qty: parseFloat(e.execQty),
+            fee: e.execFee != null ? parseFloat(e.execFee) : null,
+            fee_rate: e.feeRate != null ? parseFloat(e.feeRate) : null,
+            is_maker: e.isMaker ?? null,
+            order_type: e.orderType ?? null,
+            exec_time: new Date(parseInt(e.execTime)).toISOString(),
+            raw: e,
+          }, { onConflict: "id" });
+          if (!error) savedExecs++;
+        }
+        cursor = res.nextPageCursor ?? "";
+      } while (cursor);
+    } catch (e) {
+      warnings.push(`Исполнения не загружены: ${String(e)}`);
+    }
+
+    // ---------- 5. Денежные потоки, 7 дней ----------
+    let savedFlows = 0;
+    const usd = (coin: string, amount: number) => STABLES.has(coin) ? amount : null;
+    const saveFlow = async (row: Record<string, unknown>) => {
+      const { error } = await sb.from("cash_flows").upsert(row, { onConflict: "id" });
+      if (!error) savedFlows++;
+    };
+    // Пополнения
+    try {
+      const res = await bybitGet("/v5/asset/deposit/query-record",
+        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+      for (const d of res.rows ?? []) {
+        if (String(d.status) !== "3") continue; // 3 = success
+        const ts2 = new Date(parseInt(d.successAt));
+        const amount = parseFloat(d.amount);
+        await saveFlow({
+          id: `dep_${d.txID || d.id || d.successAt + d.coin}`,
+          ts: ts2.toISOString(), day: localParts(ts2, tz).date,
+          type: "deposit", coin: d.coin, amount, amount_usd: usd(d.coin, amount), raw: d,
+        });
+      }
+    } catch (e) { warnings.push(`Пополнения: ${String(e)}`); }
+    // Выводы
+    try {
+      const res = await bybitGet("/v5/asset/withdraw/query-record",
+        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+      for (const w of res.rows ?? []) {
+        if (w.status !== "success") continue;
+        const ts2 = new Date(parseInt(w.updateTime || w.createTime));
+        const amount = parseFloat(w.amount);
+        await saveFlow({
+          id: `wd_${w.withdrawId}`,
+          ts: ts2.toISOString(), day: localParts(ts2, tz).date,
+          type: "withdrawal", coin: w.coin, amount, amount_usd: usd(w.coin, amount), raw: w,
+        });
+      }
+    } catch (e) { warnings.push(`Выводы: ${String(e)}`); }
+    // Внутренние переводы (FUND <-> UNIFIED): считаем поток относительно UNIFIED
+    try {
+      const res = await bybitGet("/v5/asset/transfer/query-inter-transfer-list",
+        { startTime: sinceStr, endTime: String(Date.now()), limit: "50" });
+      for (const tr of res.list ?? []) {
+        if (tr.status !== "SUCCESS") continue;
+        const toUnified = tr.toAccountType === "UNIFIED";
+        const fromUnified = tr.fromAccountType === "UNIFIED";
+        if (toUnified === fromUnified) continue; // не касается UNIFIED
+        const ts2 = new Date(parseInt(tr.timestamp));
+        const amount = parseFloat(tr.amount);
+        await saveFlow({
+          id: `tr_${tr.transferId}`,
+          ts: ts2.toISOString(), day: localParts(ts2, tz).date,
+          type: toUnified ? "transfer_in" : "transfer_out",
+          coin: tr.coin, amount, amount_usd: usd(tr.coin, amount), raw: tr,
+        });
+      }
+    } catch (e) { warnings.push(`Переводы: ${String(e)}`); }
+
+    // ---------- 6. Статус ----------
+    await sb.from("sync_status").upsert({
+      id: "diary", last_ok: new Date().toISOString(),
+      detail: { task, equity, savedTrades, savedExecs, savedFlows, warnings, ms: Date.now() - startedAt },
+    }, { onConflict: "id" });
+
+    return new Response(JSON.stringify({
+      ok: true, task, day: today, isDayStart, equity,
+      savedTrades, savedExecs, savedFlows, warnings,
+    }), { headers: { "Content-Type": "application/json", ...CORS } });
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", ...CORS },
+    try {
+      const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      await sb.from("sync_status").upsert({
+        id: "diary", last_error: String(e), last_error_at: new Date().toISOString(),
+      }, { onConflict: "id" });
+    } catch { /* статус недоступен — отдаём только ответ */ }
+    return new Response(JSON.stringify({ ok: false, error: String(e), warnings }), {
+      status: 500, headers: { "Content-Type": "application/json", ...CORS },
     });
   }
 });
