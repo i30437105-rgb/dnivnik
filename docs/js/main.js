@@ -50,8 +50,6 @@ const TABS = [
   { id: "analytics", label: "Аналитика монет", icon: "📊", init: initAnalytics },
   { id: "settings", label: "Настройки", icon: "⚙️", init: initSettings },
 ];
-const inited = new Set();
-
 function renderShell() {
   app.innerHTML = `
     <div class="layout">
@@ -75,7 +73,8 @@ function showTab(id) {
   for (const t of TABS) {
     const pane = document.getElementById("tab-" + t.id);
     pane.hidden = t.id !== id;
-    if (t.id === id && !inited.has(id)) { inited.add(id); t.init(pane); }
+    // перерисовываем при каждом открытии — цифры всех вкладок всегда из свежих данных
+    if (t.id === id) t.init(pane);
   }
 }
 
