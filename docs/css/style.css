@@ -48,7 +48,9 @@ h1 { font-size: 22px; } h2 { font-size: 17px; margin: 0 0 10px; } h3 { font-size
 .tbl tr.clickable { cursor: pointer; } .tbl tr.clickable:hover td { background: var(--panel2); }
 .tbl td.empty { color: var(--muted); text-align: center; padding: 22px; white-space: normal; }
 .tbl.mini td { padding: 4px 8px; font-size: 13px; }
+.tbl .sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
 .expandrow > td { background: var(--panel2); white-space: normal; }
+.grid3 > div { min-width: 0; overflow-x: auto; }
 
 /* Карточки сводки */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }

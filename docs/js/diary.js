@@ -167,20 +167,22 @@ function renderSummary(d, lastSnap, diary) {
   const stopHit = -res >= lossUsd;
 
   el.innerHTML = `
-    <div class="card"><div class="k">Баланс на начало дня${d.start_accurate ? "" : ` <span class="tag yellow" title="Снимок в 00:00 пропущен — взят ближайший после">≈ приблизительно</span>`}</div>
-      <div class="v">${usd(B0)}</div><div class="muted small">снимок в 00:00 (${esc(state.tz)})</div></div>
+    ${d.start_accurate ? "" : `<div class="warn" style="grid-column:1/-1">⚠ Отсчёт этого дня начат не ровно с полуночи (снимок 00:00 отсутствовал) — цифры дня приблизительные.
+      Со следующего дня сервер снимает баланс ровно в 00:00 автоматически, и всё будет точно.</div>`}
+    <div class="card"><div class="k">Баланс на начало дня${d.start_accurate ? "" : ` <span class="tag yellow">≈ приблизительно</span>`}</div>
+      <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}</div></div>
     <div class="card"><div class="k">Сейчас на счету</div><div class="v">${usd(Bt)}</div>
       <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}</div></div>
     <div class="card"><div class="k">Результат дня</div>
-      <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })}</div>
-      <div class="muted small">${pct(resPct)} от утреннего баланса${(d.net_flow || 0) !== 0 ? " · с учётом пополнений/выводов" : ""}</div></div>
+      <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint">${pct(resPct)}</span></div>
+      <div class="muted small">на сколько вырос счёт с начала дня: закрытые сделки + открытые позиции − комиссии${(d.net_flow || 0) !== 0 ? " (пополнения/выводы исключены)" : ""}</div></div>
+    <div class="card"><div class="k">Закрыто сделками за день</div>
+      <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
+      <div class="muted small">чистая прибыль ${d.trades_count} закрытых сделок</div></div>
     <div class="card"><div class="k">Цель дня (${fmtRu(dayGoalPct(d), 0)}%)</div><div class="v">${usd(goalUsd)}</div>
       <div class="muted small">${goalDone ? "✅ цель выполнена" : `осталось ${usd(left)}`}</div></div>
     <div class="card"><div class="k">Лимит убытка</div><div class="v">−${usd(lossUsd)}</div>
-      <div class="muted small">${stopHit ? "⛔ стоп дня достигнут — торговлю остановить" : `запас ${usd(lossLeft)}`}</div></div>
-    <div class="card"><div class="k">Реализованный результат</div>
-      <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
-      <div class="muted small">по закрытым сделкам (${d.trades_count} шт.); разница с результатом дня — открытые позиции и комиссии</div></div>`;
+      <div class="muted small">${stopHit ? "⛔ стоп дня достигнут — торговлю остановить" : `запас ${usd(lossLeft)}`}</div></div>`;
 
   const progress = goalUsd > 0 ? Math.max(res / goalUsd * 100, 0) : 0;
   const lossProg = lossUsd > 0 ? Math.min(Math.max(-res, 0) / lossUsd * 100, 100) : 0;
@@ -379,31 +381,27 @@ function renderTrades(trades, strategies) {
 
 function renderTradesTable(container, trades, strategies) {
   const stratName = new Map(strategies.map((s) => [s.id, s.name]));
+  const short = (iso) => iso ? new Intl.DateTimeFormat("ru-RU", {
+    timeZone: state.tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(iso)) : "—";
   sortableTable(container, [
     { key: "sym", label: "Монета", type: "str", get: (t) => t.symbol,
-      render: (t) => `<b>${esc(t.symbol)}</b> <span class="tag ${t.side === "Buy" ? "green" : "red"}">${t.side === "Buy" ? "Long" : "Short"}</span>` },
-    { key: "open", label: "Вход", type: "str", get: (t) => t.opened_at, render: (t) => fmtDT(t.opened_at) },
-    { key: "close", label: "Выход", type: "str", get: (t) => t.closed_at, render: (t) => fmtDT(t.closed_at) },
-    { key: "dur", label: "Длительность", type: "num",
-      get: (t) => t.opened_at && t.closed_at ? new Date(t.closed_at) - new Date(t.opened_at) : null,
-      render: (t) => t.opened_at && t.closed_at ? fmtDur(new Date(t.closed_at) - new Date(t.opened_at)) : "—" },
-    { key: "entry", label: "Вход / выход, цена", type: "num", get: (t) => t.entry_price,
+      render: (t) => `<b>${esc(t.symbol)}</b><span class="sub"><span class="${t.side === "Buy" ? "green" : "red"}">${t.side === "Buy" ? "Long" : "Short"}</span>${t.leverage ? " · " + esc(t.leverage) + "x" : ""}</span>` },
+    { key: "close", label: "Время", type: "str", get: (t) => t.closed_at,
+      render: (t) => `${short(t.opened_at)} → ${short(t.closed_at)}<span class="sub">${t.opened_at && t.closed_at ? fmtDur(new Date(t.closed_at) - new Date(t.opened_at)) : ""}</span>` },
+    { key: "entry", label: "Цена входа → выхода", type: "num", get: (t) => t.entry_price,
       render: (t) => `${price(t.entry_price)} → ${price(t.exit_price)}` },
-    { key: "qty", label: "Размер", type: "num", get: (t) => t.qty,
-      render: (t) => `${fmtRu(t.qty, 4)} <span class="muted">(${usd(t.qty * t.entry_price)})</span>` },
-    { key: "lev", label: "Плечо", type: "str", get: (t) => t.leverage ?? "—" },
-    { key: "pnl", label: "PnL", type: "num", get: (t) => t.pnl,
-      render: (t) => `<b class="${t.pnl > 0 ? "green" : t.pnl < 0 ? "red" : ""}">${usd(t.pnl, { sign: true })}</b>` },
-    { key: "roi", label: "ROI", type: "num",
-      get: (t) => t.entry_price * t.qty > 0 ? t.pnl / (t.entry_price * t.qty) * 100 : null,
-      render: (t) => t.entry_price * t.qty > 0 ? pct(t.pnl / (t.entry_price * t.qty) * 100) : "—" },
+    { key: "qty", label: "Размер", type: "num", get: (t) => t.qty * t.entry_price,
+      render: (t) => `${usd(t.qty * t.entry_price)}<span class="sub">${fmtRu(t.qty, 4)} шт.</span>` },
+    { key: "pnl", label: "Результат", type: "num", get: (t) => t.pnl,
+      render: (t) => `<b class="${t.pnl > 0 ? "green" : t.pnl < 0 ? "red" : ""}">${usd(t.pnl, { sign: true })}</b><span class="sub">${t.entry_price * t.qty > 0 ? pct(t.pnl / (t.entry_price * t.qty) * 100) : ""}</span>` },
     { key: "fee", label: "Комиссии", type: "num",
       get: (t) => (Number(t.open_fee) || 0) + (Number(t.close_fee) || 0),
       render: (t) => t.open_fee != null || t.close_fee != null ? usd((+t.open_fee || 0) + (+t.close_fee || 0)) : "—" },
     { key: "strat", label: "Стратегия", type: "str",
       get: (t) => stratName.get(t.trade_notes?.strategy_id) ?? "",
       render: (t) => esc(stratName.get(t.trade_notes?.strategy_id) ?? "—") },
-    { key: "notes", label: "Заметки", type: "str", sortable: false,
+    { key: "notes", label: "📝", type: "str", sortable: false,
       get: () => "", render: (t) =>
         `${t.trade_notes?.comment ? "💬" : ""}${t.trade_notes?.state_tags?.length ? " 🏷" : ""}${t.attachments?.length ? " 📎" + t.attachments.length : ""}` },
   ], trades, {
