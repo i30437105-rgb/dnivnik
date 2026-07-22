@@ -97,7 +97,8 @@ Deno.serve(async (req) => {
         { day: today, start_balance: equity, start_accurate: true }, { onConflict: "day" });
 
       // Кубышка (вариант А): в полночь откладываем % от прибыли ЗАВЕРШИВШЕГОСЯ дня.
-      // Итог вчера = equity сейчас (00:00) − старт вчера − вчерашние пополнения/выводы.
+      // Прибыль дня — РЕАЛИЗОВАННАЯ (закрытые сделки + фандинг), без плавающего PnL открытых позиций:
+      // (equity сейчас − UPL сейчас) − (старт вчера − UPL на старте вчера) − вчерашние пополнения/выводы.
       try {
         if (settings?.vault_start_day) {
           const yday = localParts(new Date(now.getTime() - 86400_000), tz).date;
@@ -112,7 +113,10 @@ Deno.serve(async (req) => {
                 // пополнения/переводы — это тело депозита, из прибыли исключаются полностью
                 const net = (yFlows ?? []).reduce((s, f) =>
                   s + (f.type === "deposit" || f.type === "transfer_in" ? 1 : -1) * Number(f.amount_usd), 0);
-                const r = equity - Number(yRow.start_balance) - net;
+                const { data: yStartSnap } = await sb.from("account_snapshots")
+                  .select("upl").eq("day", yday).order("ts", { ascending: true }).limit(1).maybeSingle();
+                const r = (equity - (upl ?? 0)) -
+                  (Number(yRow.start_balance) - Number(yStartSnap?.upl ?? 0)) - net;
                 if (r > 0) {
                   const pctV = Number(settings.vault_pct ?? 50);
                   const { error } = await sb.from("vault_ledger").insert({

@@ -44,9 +44,12 @@ async function render() {
   const equity = lastSnap ? Number(lastSnap.equity) : null;
   const working = equity != null ? Math.max(equity - vault, 0) : null;
   const base = Number(s.vault_base) || days[0]?.start_balance || 0;
-  // заработано = сумма дневных результатов с точки отсчёта (пополнения/выводы исключены)
+  // заработано = сумма РЕАЛИЗОВАННЫХ дневных результатов (без плавающего PnL открытых позиций;
+  // пополнения/выводы исключены) — синхронно с «Результатом дня» в дневнике
   const earned = days.reduce((sum, d) => {
-    const r = d.end_equity != null ? Number(d.end_equity) - Number(d.start_balance) - (Number(d.net_flow) || 0) : 0;
+    const r = d.end_equity != null
+      ? (Number(d.end_equity) - Number(d.end_upl || 0)) - (Number(d.start_balance) - Number(d.start_upl || 0)) - (Number(d.net_flow) || 0)
+      : 0;
     return sum + r;
   }, 0);
   // вложенный капитал = стартовая база + все пополнения тела депозита; % прироста считаем от него
@@ -91,7 +94,8 @@ async function render() {
         </div>
       </div>
       <p class="muted small" style="margin-top:8px">Фиксация происходит автоматически в полночь (${esc(state.tz)}):
-      если день закрыт в плюс, ${fmtRu(Number(s.vault_pct), 0)}% результата уходит в кубышку.
+      если день закрыт в плюс по реализованному результату (закрытые сделки + фандинг, открытые позиции не считаются),
+      ${fmtRu(Number(s.vault_pct), 0)}% результата уходит в кубышку.
       Убыточные дни кубышку не трогают — она неприкосновенная. ${ledger.length === 0 ? "Первая фиксация — сегодня в полночь, если день закроется в плюс." : ""}</p>
     </section>
     <section><h2>История</h2><div id="vl-history" class="tblwrap block" style="padding:0"></div></section>`;

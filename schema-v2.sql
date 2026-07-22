@@ -196,6 +196,8 @@ create table if not exists sync_status (
 );
 
 -- ---------- Сводка по дням (для календаря/графика/статистики) ----------
+-- Результат дня везде считается РЕАЛИЗОВАННЫМ (без плавающего PnL открытых позиций):
+--   (end_equity - end_upl) - (start_balance - start_upl) - net_flow
 create or replace view v_days with (security_invoker = true) as
 select
   d.day,
@@ -211,7 +213,9 @@ select
             from cash_flows c where c.day = d.day and c.amount_usd is not null), 0) as net_flow,
   exists(select 1 from cash_flows c where c.day = d.day and c.amount_usd is null) as flow_unpriced,
   coalesce((select sum(t.pnl) from trades t where t.day = d.day), 0) as realized_pnl,
-  (select count(*) from trades t where t.day = d.day) as trades_count
+  (select count(*) from trades t where t.day = d.day) as trades_count,
+  (select coalesce(a.upl, 0) from account_snapshots a where a.day = d.day order by a.ts asc limit 1) as start_upl,
+  (select coalesce(a.upl, 0) from account_snapshots a where a.day = d.day order by a.ts desc limit 1) as end_upl
 from days d;
 
 -- ---------- RLS: доступ только вошедшему пользователю ----------

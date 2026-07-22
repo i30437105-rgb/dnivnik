@@ -37,7 +37,7 @@ export async function loadDaysRange(from, to) {
 
 export async function loadSnapshots(day) {
   const { data, error } = await sb.from("account_snapshots")
-    .select("ts, equity, kind").eq("day", day).order("ts").limit(2000);
+    .select("ts, equity, upl, kind").eq("day", day).order("ts").limit(2000);
   if (error) throw new Error(error.message);
   return data ?? [];
 }

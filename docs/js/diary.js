@@ -55,7 +55,7 @@ export function initDiary(container) {
         </div>
       </div>
       <div id="dy-chart" style="height:260px"></div>
-      <div class="muted small" style="margin-top:6px">В режиме «Неделя»/«Месяц» — баланс на конец каждого дня; в режиме одного дня — внутридневная линия с целью и лимитом.</div>
+      <div class="muted small" style="margin-top:6px">Линия — реализованный баланс (без плавающего PnL открытых позиций). «Неделя»/«Месяц» — на конец каждого дня; один день — внутридневная линия с целью и лимитом.</div>
     </section>
     <section style="margin-bottom:26px"><h2>Статистика за период</h2><div id="dy-stats"></div></section>
     <section><h2>Сделки за период</h2><div id="dy-trades" class="tblwrap block" style="padding:0"></div></section>`;
@@ -105,7 +105,14 @@ const dayLossUsd = (d, B0) => {
   if (d?.loss_pct != null) return B0 * d.loss_pct / 100;
   return s.loss_limit_mode === "usd" && s.daily_loss_usd != null ? s.daily_loss_usd : B0 * s.daily_loss_pct / 100;
 };
-const dayResult = (d) => d.end_equity != null ? d.end_equity - d.start_balance - (d.net_flow || 0) : null;
+// Результат дня — только РЕАЛИЗОВАННОЕ (закрытые сделки + фандинг), без плавающего PnL открытых позиций
+const dayResult = (d) => d.end_equity != null
+  ? (Number(d.end_equity) - Number(d.end_upl || 0)) - (Number(d.start_balance) - Number(d.start_upl || 0)) - (Number(d.net_flow) || 0)
+  : null;
+// Изменение счёта целиком (с открытыми позициями) — справочно
+const dayResultFull = (d) => d.end_equity != null
+  ? Number(d.end_equity) - Number(d.start_balance) - (Number(d.net_flow) || 0)
+  : null;
 
 // Кубышка: сумма отложенного к началу дня (записи за предыдущие дни)
 let vaultLedger = [];
@@ -164,14 +171,13 @@ async function render() {
     : "";
 }
 
-// Раскладка результата дня по слагаемым: закрыто + открытые позиции + фандинг/прочее
-function dayBreakdown(d, res, lastSnap) {
+// Раскладка результата дня: только реализованное; открытые позиции — справочно, в результат не входят
+function dayBreakdown(d, res, uplDelta) {
   const realized = Number(d.realized_pnl) || 0;
-  const upl = lastSnap?.upl != null ? Number(lastSnap.upl) : null;
-  if (upl == null) return "рост счёта с начала дня: закрытые сделки + открытые позиции − комиссии";
-  const other = res - realized - upl;
+  const other = res - realized;
   const p = (v) => usd(v, { sign: true });
-  return `= закрыто ${p(realized)} + открытые позиции ${p(upl)} + фандинг/прочее ${p(other)}`;
+  return `= закрыто ${p(realized)} + фандинг/прочее ${p(other)}` +
+    (Math.abs(uplDelta) >= 0.005 ? ` · открытые позиции ${p(uplDelta)} не входят` : "");
 }
 
 function renderSummary(d, lastSnap, diary) {
@@ -186,14 +192,20 @@ function renderSummary(d, lastSnap, diary) {
   const vaultV = Math.min(vaultBefore(d.day), B0);
   const B0w = B0 - vaultV; // рабочий капитал: без кубышки
   const Bt = lastSnap ? Number(lastSnap.equity) : Number(d.end_equity ?? B0);
-  const res = Bt - B0 - (d.net_flow || 0);
+  const uplNow = lastSnap?.upl != null ? Number(lastSnap.upl) : Number(d.end_upl || 0);
+  const startUpl = Number(d.start_upl || 0);
+  const resFull = Bt - B0 - (d.net_flow || 0);               // изменение счёта с открытыми позициями
+  const res = resFull - (uplNow - startUpl);                  // РЕЗУЛЬТАТ ДНЯ: только реализованное
+  const uplDelta = uplNow - startUpl;                         // вклад открытых позиций (в результат не входит)
   const resPct = B0w > 0 ? res / B0w * 100 : 0;
   const goalUsd = B0w * dayGoalPct(d) / 100;
   const left = Math.max(goalUsd - res, 0);
   const lossUsd = dayLossUsd(d, B0w);
-  const lossLeft = Math.max(lossUsd - Math.max(-res, 0), 0);
+  // стоп-день учитывает и плавающий убыток: берём худший из реализованного и полного результата
+  const worstRes = Math.min(res, resFull);
+  const lossLeft = Math.max(lossUsd - Math.max(-worstRes, 0), 0);
   const goalDone = res >= goalUsd;
-  const stopHit = -res >= lossUsd;
+  const stopHit = -worstRes >= lossUsd;
 
   el.innerHTML = `
     ${d.start_accurate ? "" : `<div class="warn" style="grid-column:1/-1">⚠ Отсчёт этого дня начат не ровно с полуночи (снимок 00:00 отсутствовал) — цифры дня приблизительные.
@@ -202,23 +214,23 @@ function renderSummary(d, lastSnap, diary) {
       <div class="v">${usd(B0)}</div><div class="muted small">${d.start_accurate ? `снимок в 00:00 (${esc(state.tz)})` : "восстановлен по первому снимку дня"}${vaultV > 0 ? ` · в кубышке ${usd(vaultV)} → в работе ${usd(B0w)}` : ""}</div></div>
     <div class="card"><div class="k">Сейчас на счету</div><div class="v">${usd(Bt)}</div>
       <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}${lastSnap?.upl != null && Math.abs(lastSnap.upl) >= 0.005 ? ` · в т.ч. открытые позиции ${usd(Number(lastSnap.upl), { sign: true })}` : ""}</div></div>
-    <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня</div>
+    <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня <span class="muted small">только закрытое</span></div>
       <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint ${res > 0 ? "green" : res < 0 ? "red" : ""}">${pct(resPct)}</span></div>
-      <div class="muted small">${dayBreakdown(d, res, lastSnap)}${(d.net_flow || 0) !== 0 ? " · пополнения/выводы исключены" : ""}${vaultV > 0 ? " · % — от рабочего капитала" : ""}</div></div>
+      <div class="muted small">${dayBreakdown(d, res, uplDelta)}${(d.net_flow || 0) !== 0 ? " · пополнения/выводы исключены" : ""}${vaultV > 0 ? " · % — от рабочего капитала" : ""}</div></div>
     <div class="card"><div class="k">Закрыто сделками за день</div>
       <div class="v ${d.realized_pnl > 0 ? "green" : d.realized_pnl < 0 ? "red" : ""}">${usd(d.realized_pnl, { sign: true })}</div>
       <div class="muted small">чистая прибыль ${d.trades_count} закрытых сделок</div></div>
     <div class="card"><div class="k">Цель дня (${fmtRu(dayGoalPct(d), 0)}%)</div><div class="v">${usd(goalUsd)}</div>
       <div class="muted small">${goalDone ? "✅ цель выполнена" : `осталось ${usd(left)}`}</div></div>
     <div class="card"><div class="k">Лимит убытка</div><div class="v">−${usd(lossUsd)}</div>
-      <div class="muted small">${stopHit ? "⛔ стоп дня достигнут — торговлю остановить" : `запас ${usd(lossLeft)}`}</div></div>`;
+      <div class="muted small">${stopHit ? "⛔ стоп дня достигнут — торговлю остановить" : `запас ${usd(lossLeft)}`}${uplDelta < -0.005 ? " · плавающий убыток учтён" : ""}</div></div>`;
 
   const progress = goalUsd > 0 ? Math.max(res / goalUsd * 100, 0) : 0;
-  const lossProg = lossUsd > 0 ? Math.min(Math.max(-res, 0) / lossUsd * 100, 100) : 0;
+  const lossProg = lossUsd > 0 ? Math.min(Math.max(-worstRes, 0) / lossUsd * 100, 100) : 0;
   bars.innerHTML = `
     <div class="barwrap"><div class="barlabel"><span>К цели дня</span><b class="green">${fmtRu(Math.round(progress), 0)}%</b></div>
       <div class="bar"><div class="fill green" style="width:${Math.min(progress, 100)}%"></div></div></div>
-    ${res < 0 ? `<div class="barwrap"><div class="barlabel red"><span>К лимиту убытка</span><b>${fmtRu(Math.round(lossProg), 0)}%</b></div>
+    ${worstRes < 0 ? `<div class="barwrap"><div class="barlabel red"><span>К лимиту убытка</span><b>${fmtRu(Math.round(lossProg), 0)}%</b></div>
       <div class="bar"><div class="fill red" style="width:${lossProg}%"></div></div></div>` : ""}`;
 }
 
@@ -270,7 +282,8 @@ function renderCalendar(days, trades, today) {
 
 // ---------- Окно дня (ТЗ 5.4) ----------
 async function openDayModal(dayStr, d, allTrades) {
-  const res = dayResult(d);
+  const res = dayResult(d);                 // реализованный итог (без открытых позиций)
+  const resFull = dayResultFull(d);         // изменение счёта целиком — справочно
   const dayTrades = allTrades.filter((t) => t.day === dayStr);
   const flows = (await loadCashFlows(dayStr, dayStr));
   const goalUsd = workStart(d) * dayGoalPct(d) / 100;
@@ -279,12 +292,13 @@ async function openDayModal(dayStr, d, allTrades) {
   const modal = openModal(`
     <h2>${fmtDay(dayStr)}</h2>
     <div class="cards">
-      <div class="card"><div class="k">Старт → конец</div><div class="v">${usd(d.start_balance)} → ${usd(d.end_equity)}</div></div>
-      <div class="card"><div class="k">Результат</div><div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} (${pct(d.start_balance > 0 ? res / d.start_balance * 100 : 0)})</div></div>
+      <div class="card"><div class="k">Старт → конец</div><div class="v">${usd(d.start_balance)} → ${usd(d.end_equity)}</div>
+        ${resFull != null && Math.abs(resFull - res) >= 0.005 ? `<div class="muted small">изменение счёта с открытыми: ${usd(resFull, { sign: true })}</div>` : ""}</div>
+      <div class="card"><div class="k">Результат <span class="muted small">только закрытое</span></div><div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} (${pct(d.start_balance > 0 ? res / d.start_balance * 100 : 0)})</div></div>
       <div class="card"><div class="k">Цель / выполнение</div><div class="v">${usd(goalUsd)} · ${goalUsd > 0 ? Math.round(res / goalUsd * 100) : 0}%</div></div>
       <div class="card"><div class="k">Лимит убытка</div><div class="v">−${usd(lossUsd)}</div></div>
-      <div class="card"><div class="k">Реализованный PnL</div><div class="v">${usd(d.realized_pnl, { sign: true })}</div>
-        <div class="muted small">нереализованный + комиссии: ${usd(res - d.realized_pnl, { sign: true })}</div></div>
+      <div class="card"><div class="k">Закрыто сделками</div><div class="v">${usd(d.realized_pnl, { sign: true })}</div>
+        <div class="muted small">фандинг/прочее: ${usd(res - d.realized_pnl, { sign: true })}</div></div>
       <div class="card"><div class="k">Сделок / монеты</div><div class="v">${dayTrades.length}</div>
         <div class="muted small">${esc(symbols.join(", ") || "—")}</div></div>
     </div>
@@ -304,20 +318,25 @@ async function renderChart(days, today) {
   let points = [];
   let goalLine = null, lossLine = null;
 
+  // линии строим по РЕАЛИЗОВАННОМУ балансу (equity − плавающий PnL открытых позиций)
   if (period.mode === "week" || period.mode === "month" || period.mode === "weeks") {
     points = days.filter((d) => d.end_equity != null)
-      .map((d) => ({ time: d.day, value: Number(d.end_equity) }));
+      .map((d) => ({ time: d.day, value: Number(d.end_equity) - Number(d.end_upl || 0) }));
   }
   // внутридневная линия для сегодняшнего дня, если период содержит сегодня и данных ≤1 дня
   if (points.length <= 1) {
     const day = days.find((d) => d.day === today) ? today : days[days.length - 1]?.day;
     if (day) {
       const snaps = await loadSnapshots(day);
-      points = snaps.map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), value: Number(s.equity) }));
+      points = snaps.map((s) => ({
+        time: Math.floor(new Date(s.ts).getTime() / 1000),
+        value: Number(s.equity) - Number(s.upl || 0),
+      }));
       const d = days.find((x) => x.day === day);
       if (d && !isPct) {
-        goalLine = Number(d.start_balance) + workStart(d) * dayGoalPct(d) / 100;
-        lossLine = Number(d.start_balance) - dayLossUsd(d, workStart(d));
+        const startReal = Number(d.start_balance) - Number(d.start_upl || 0);
+        goalLine = startReal + workStart(d) * dayGoalPct(d) / 100;
+        lossLine = startReal - dayLossUsd(d, workStart(d));
       }
     }
   }
