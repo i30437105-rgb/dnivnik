@@ -4,6 +4,7 @@ import { loadSettings } from "./api.js";
 import { initDiary } from "./diary.js";
 import { initVault } from "./vault.js";
 import { initAnalytics } from "./analytics.js";
+import { initWaves } from "./waves.js";
 import { initSettings } from "./settings.js";
 import { esc } from "./util.js";
 
@@ -48,6 +49,7 @@ const TABS = [
   { id: "diary", label: "Дневник", icon: "📓", init: initDiary },
   { id: "vault", label: "Кубышка", icon: "💰", init: initVault },
   { id: "analytics", label: "Аналитика монет", icon: "📊", init: initAnalytics },
+  { id: "waves", label: "Волны — памятка", icon: "🌊", init: initWaves },
   { id: "settings", label: "Настройки", icon: "⚙️", init: initSettings },
 ];
 function renderShell() {
