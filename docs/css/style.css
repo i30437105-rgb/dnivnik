@@ -303,3 +303,9 @@ details.block[open] > summary { margin-bottom: 4px; }
   background: var(--bg-2); margin-bottom: 8px; }
 .ce-row select { width: 190px; flex: 0 0 auto; }
 .ce-row .seg .btn { padding: 4px 9px; }
+.cltabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.cltab { background: var(--bg-1); border: 1px solid var(--border-soft); color: var(--text-muted);
+  border-radius: 10px; padding: 8px 16px; font-size: var(--fs-13); font-weight: 600;
+  cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.cltab:hover { color: var(--text); border-color: var(--border); }
+.cltab.on { background: var(--accent); border-color: var(--accent); color: #fff; }

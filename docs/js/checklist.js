@@ -18,6 +18,10 @@ const loadPass = (id) => {
 };
 const savePass = (id, marks) => localStorage.setItem(passKey(id), JSON.stringify(marks));
 
+// Активная вкладочка-чек-лист (переживает перерисовку и перезаход)
+const getActive = () => Number(localStorage.getItem("cl-active")) || null;
+const setActive = (id) => localStorage.setItem("cl-active", String(id));
+
 export function initChecklist(container) {
   root = container;
   root.innerHTML = `
@@ -33,6 +37,11 @@ export function initChecklist(container) {
 
 async function render() {
   lists = await loadChecklists();
+  draw();
+}
+
+// перерисовка без похода в базу (переключение вкладочек)
+function draw() {
   const body = root.querySelector("#cl-body");
   if (!lists.length) {
     body.innerHTML = `<div class="block" style="text-align:center;padding:46px 20px">
@@ -45,8 +54,21 @@ async function render() {
     body.querySelector("#cl-new2").onclick = () => openEditor(null);
     return;
   }
-  body.innerHTML = lists.map((l) => `<section class="block" style="margin-bottom:18px" id="cl-${l.id}"></section>`).join("");
-  for (const l of lists) renderOne(l);
+  // Вкладочки: по одной на чек-лист, на странице виден только активный
+  let activeId = getActive();
+  if (!lists.some((l) => l.id === activeId)) activeId = lists[0].id;
+  setActive(activeId);
+  const active = lists.find((l) => l.id === activeId);
+  body.innerHTML = `
+    <div class="cltabs">
+      ${lists.map((l) => `<button class="cltab ${l.id === activeId ? "on" : ""}" data-id="${l.id}">${esc(l.name)}</button>`).join("")}
+    </div>
+    <section class="block" id="cl-${active.id}"></section>`;
+  body.querySelectorAll(".cltab").forEach((b) => b.onclick = () => {
+    setActive(Number(b.dataset.id));
+    draw();
+  });
+  renderOne(active);
 }
 
 function calc(list, marks) {
@@ -189,6 +211,7 @@ function openEditor(list) {
       else id = (await createChecklist(name, thr)).id;
       await replaceChecklistItems(id, clean);
       localStorage.removeItem(passKey(id)); // состав изменился — старое прохождение недействительно
+      setActive(id); // новый/изменённый чек-лист сразу открывается своей вкладочкой
       notify("✓ Чек-лист сохранён");
       modal.close();
       render();
