@@ -235,19 +235,32 @@ function renderSummary(d, lastSnap, diary) {
 }
 
 // ---------- Календарь (месяц / неделя / сводка недель) ----------
+// Иконки статуса дня: кубок = цель выполнена, палец вверх = профит без цели, треснувший щит = убыток
+const calIc = (paths) =>
+  `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+const CAL_IC = {
+  trophy: calIc('<path d="M7 4h10v5.5a5 5 0 0 1-10 0Z"/><path d="M7 5.5H4.6c.1 2.7 1.3 4.4 2.9 4.7M17 5.5h2.4c-.1 2.7-1.3 4.4-2.9 4.7"/><path d="M12 14.5V18M8.5 20.5h7"/>'),
+  thumb: calIc('<path d="M3.5 11h3v9h-3Z"/><path d="M6.5 11.5 10 4.6a1.7 1.7 0 0 1 3.2.9L12.4 9h5.9a1.7 1.7 0 0 1 1.7 2l-1.3 6.8a2.1 2.1 0 0 1-2.1 1.7H6.5"/>'),
+  shield: calIc('<path d="M12 3.2 19 6v5.2c0 4.6-3 8.6-7 10.1-4-1.5-7-5.5-7-10.1V6Z"/><path d="m12.8 7-2 3.6h2.8l-2.2 4.6"/>'),
+};
+
 function renderCalendar(days, trades, today) {
   const el = root.querySelector("#dy-calendar");
   const byDay = new Map(days.map((d) => [d.day, d]));
   const cell = (dayStr, { compact = false } = {}) => {
     const d = byDay.get(dayStr);
     const res = d ? dayResult(d) : null;
-    const cls = res == null ? "nodata" : res > 0 ? "pos" : res < 0 ? "neg" : "zero";
+    const base = d ? workStart(d) : 0; // рабочий капитал дня — как в карточке «Результат дня»
+    const goalDone = res != null && base > 0 && res >= base * dayGoalPct(d) / 100;
+    const cls = res == null ? "nodata" : res > 0 ? (goalDone ? "pos" : "mid") : res < 0 ? "neg" : "zero";
+    const icon = res == null || res === 0 ? "" : goalDone ? CAL_IC.trophy : res > 0 ? CAL_IC.thumb : CAL_IC.shield;
     const inMonth = period.mode !== "month" || dayStr.startsWith(period.anchor);
     const count = d?.trades_count ? `<div class="cnt">${d.trades_count} сдел.</div>` : "";
     return `<div class="cal-cell ${cls} ${dayStr === today ? "today" : ""} ${inMonth ? "" : "outside"}" data-day="${dayStr}">
       <div class="d">${Number(dayStr.slice(8))}</div>
+      ${icon ? `<span class="ric">${icon}</span>` : ""}
       ${res != null ? `<div class="r">${usd(res, { sign: true })}</div>
-        <div class="rp">${pct(d.start_balance > 0 ? res / d.start_balance * 100 : 0)}</div>${compact ? "" : count}` : ""}
+        <div class="rp">${pct(base > 0 ? res / base * 100 : 0)}</div>${compact ? "" : count}` : ""}
     </div>`;
   };
 
@@ -260,10 +273,10 @@ function renderCalendar(days, trades, today) {
       const wDays = Array.from({ length: 7 }, (_, i) => addDays(cur, i))
         .map((ds) => byDay.get(ds)).filter(Boolean);
       const sum = wDays.reduce((s, d) => s + (dayResult(d) ?? 0), 0);
-      const start = wDays[0]?.start_balance;
+      const start = wDays[0] ? workStart(wDays[0]) : 0;
       html += `<div class="weekrow"><div class="wk">Неделя ${w} <span class="muted small">${fmtDay(cur)} – ${fmtDay(addDays(cur, 6))}</span></div>
         <div class="wv ${sum > 0 ? "green" : sum < 0 ? "red" : ""}">${usd(sum, { sign: true })}</div>
-        <div class="muted">${start ? pct(sum / start * 100) : ""} · дней с данными: ${wDays.length}</div></div>`;
+        <div class="muted">${start > 0 ? pct(sum / start * 100) : ""} · дней с данными: ${wDays.length}</div></div>`;
       cur = addDays(cur, 7);
       w++;
     }
@@ -294,7 +307,7 @@ async function openDayModal(dayStr, d, allTrades) {
     <div class="cards">
       <div class="card"><div class="k">Старт → конец</div><div class="v">${usd(d.start_balance)} → ${usd(d.end_equity)}</div>
         ${resFull != null && Math.abs(resFull - res) >= 0.005 ? `<div class="muted small">изменение счёта с открытыми: ${usd(resFull, { sign: true })}</div>` : ""}</div>
-      <div class="card"><div class="k">Результат <span class="muted small">только закрытое</span></div><div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} (${pct(d.start_balance > 0 ? res / d.start_balance * 100 : 0)})</div></div>
+      <div class="card"><div class="k">Результат <span class="muted small">только закрытое</span></div><div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} (${pct(workStart(d) > 0 ? res / workStart(d) * 100 : 0)})</div></div>
       <div class="card"><div class="k">Цель / выполнение</div><div class="v">${usd(goalUsd)} · ${goalUsd > 0 ? Math.round(res / goalUsd * 100) : 0}%</div></div>
       <div class="card"><div class="k">Лимит убытка</div><div class="v">−${usd(lossUsd)}</div></div>
       <div class="card"><div class="k">Закрыто сделками</div><div class="v">${usd(d.realized_pnl, { sign: true })}</div>
@@ -400,7 +413,7 @@ function renderStats(days, trades, stratName) {
   const li = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
   el.innerHTML = `<div class="stats">
     ${li("Баланс за период", `${usd(startBal)} → ${usd(endBal)}`)}
-    ${li("Результат", `${usd(totalRes, { sign: true })} ${startBal > 0 ? "(" + pct(totalRes / startBal * 100) + ")" : ""}`)}
+    ${li("Результат", `${usd(totalRes, { sign: true })} ${withData[0] && workStart(withData[0]) > 0 ? "(" + pct(totalRes / workStart(withData[0]) * 100) + ") от рабочего капитала" : ""}`)}
     ${li("Сделок", `${trades.length} <span class="muted">(${wins.length} прибыльных / ${losses.length} убыточных)</span>`)}
     ${li("Win rate", trades.length ? pct(wins.length / trades.length * 100, { sign: false }) : "—")}
     ${li("Дней цель выполнена", `${goalDays} из ${withData.length}`)}

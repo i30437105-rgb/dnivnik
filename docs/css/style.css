@@ -165,8 +165,16 @@ span.warn { display: inline; background: none; border: none; padding: 0; color: 
 .cal-cell .cnt { font-size: 10.5px; color: #7c746a; }
 .cal-cell.pos { background: var(--pos-dim); border-color: var(--pos-bd); }
 .cal-cell.pos .r, .cal-cell.pos .rp { color: var(--pos); }
+.cal-cell.mid { background: var(--warn-dim); border-color: var(--warn-bd); }
+.cal-cell.mid .r, .cal-cell.mid .rp { color: var(--warn); }
 .cal-cell.neg { background: var(--neg-dim); border-color: var(--neg-bd); }
 .cal-cell.neg .r, .cal-cell.neg .rp { color: var(--neg); }
+/* Иконка статуса дня: кубок (цель), палец вверх (профит без цели), треснувший щит (убыток) */
+.cal-cell { position: relative; }
+.cal-cell .ric { position: absolute; top: 8px; right: 9px; line-height: 0; opacity: .95; }
+.cal-cell.pos .ric { color: var(--pos); }
+.cal-cell.mid .ric { color: var(--warn); }
+.cal-cell.neg .ric { color: var(--neg); }
 .cal-cell.today { outline: 2px solid var(--accent); outline-offset: -1px; }
 .cal-cell.outside { opacity: .45; }
 .cal-cell:not(.nodata) { cursor: pointer; }
