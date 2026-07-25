@@ -11,7 +11,8 @@ import { renderTradeCard } from "./tradecard.js";
 
 let root;
 // Единый период: календарь, график, статистика и сделки живут синхронно (ТЗ 5.4)
-const period = { mode: "month", anchor: null, from: null, to: null, chartUnits: "usd" };
+const period = { mode: "month", anchor: null, from: null, to: null, chartUnits: "usd",
+  chartRange: "month", cfrom: null, cto: null }; // период графика счёта — свой, не привязан к календарю
 
 export function initDiary(container) {
   root = container;
@@ -47,15 +48,29 @@ export function initDiary(container) {
       <div id="dy-calendar"></div>
     </section>
     <section class="block">
-      <div class="row spread" style="margin-bottom:12px">
-        <h2 style="margin:0">График результата за период</h2>
-        <div class="seg">
-          <button class="btn cunit" data-u="usd">USD</button>
-          <button class="btn cunit" data-u="pct">%</button>
+      <div class="row spread" style="margin-bottom:12px;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">График счёта</h2>
+        <div class="row" style="gap:10px;flex-wrap:wrap">
+          <div class="seg">
+            <button class="btn crange" data-r="day">День</button>
+            <button class="btn crange" data-r="week">Неделя</button>
+            <button class="btn crange" data-r="month">Месяц</button>
+            <button class="btn crange" data-r="all">Всё время</button>
+            <button class="btn crange" data-r="custom">Период…</button>
+          </div>
+          <div class="row" id="dy-crange-custom" style="gap:6px" hidden>
+            <input type="date" id="dy-cfrom" style="width:150px">
+            <span class="muted small">—</span>
+            <input type="date" id="dy-cto" style="width:150px">
+          </div>
+          <div class="seg">
+            <button class="btn cunit" data-u="usd">USD</button>
+            <button class="btn cunit" data-u="pct">%</button>
+          </div>
         </div>
       </div>
       <div id="dy-chart" style="height:260px"></div>
-      <div class="muted small" style="margin-top:6px">Линия — реализованный баланс (без плавающего PnL открытых позиций). «Неделя»/«Месяц» — на конец каждого дня; один день — внутридневная линия с целью и лимитом.</div>
+      <div class="muted small" style="margin-top:6px">Линия — реализованный баланс (без плавающего PnL открытых позиций). Режим «День» — внутридневная линия с целью и лимитом; остальные — баланс на конец каждого дня.</div>
     </section>
     <section style="margin-bottom:26px"><h2>Статистика за период</h2><div id="dy-stats"></div></section>
     <section><h2>Сделки за период</h2><div id="dy-trades" class="tblwrap block" style="padding:0"></div></section>`;
@@ -69,7 +84,32 @@ export function initDiary(container) {
   });
   root.querySelector("#dy-prev").onclick = () => { shift(-1); render(); };
   root.querySelector("#dy-next").onclick = () => { shift(1); render(); };
-  root.querySelectorAll(".cunit").forEach((b) => b.onclick = () => { period.chartUnits = b.dataset.u; render(); });
+
+  // Управление графиком счёта: единицы, период, произвольные даты — перерисовывают только график
+  const syncChartControls = () => {
+    root.querySelectorAll(".cunit").forEach((b) => b.classList.toggle("primary", b.dataset.u === period.chartUnits));
+    root.querySelectorAll(".crange").forEach((b) => b.classList.toggle("primary", b.dataset.r === period.chartRange));
+    root.querySelector("#dy-crange-custom").hidden = period.chartRange !== "custom";
+  };
+  root.querySelectorAll(".cunit").forEach((b) => b.onclick = () => {
+    period.chartUnits = b.dataset.u;
+    syncChartControls();
+    renderChart(todayLocal());
+  });
+  root.querySelectorAll(".crange").forEach((b) => b.onclick = () => {
+    period.chartRange = b.dataset.r;
+    if (period.chartRange === "custom" && !period.cfrom) {
+      period.cfrom = addDays(todayLocal(), -13);
+      period.cto = todayLocal();
+    }
+    if (period.cfrom) root.querySelector("#dy-cfrom").value = period.cfrom;
+    if (period.cto) root.querySelector("#dy-cto").value = period.cto;
+    syncChartControls();
+    renderChart(todayLocal());
+  });
+  root.querySelector("#dy-cfrom").onchange = (e) => { period.cfrom = e.target.value; renderChart(todayLocal()); };
+  root.querySelector("#dy-cto").onchange = (e) => { period.cto = e.target.value; renderChart(todayLocal()); };
+  syncChartControls();
 
   render().catch((e) => root.querySelector("#dy-status").innerHTML = `<span class="warn">Ошибка: ${esc(e.message)}</span>`);
 }
@@ -159,7 +199,7 @@ async function render() {
   renderSummary(todayRow, lastSnap, diary);
 
   renderCalendar(days, trades, today);
-  await renderChart(days, today);
+  await renderChart(today);
   renderStats(days, trades, stratName);
   renderTrades(trades, strategies);
 
@@ -171,13 +211,14 @@ async function render() {
     : "";
 }
 
-// Раскладка результата дня: только реализованное; открытые позиции — справочно, в результат не входят
-function dayBreakdown(d, res, uplDelta) {
+// Раскладка результата дня: только реализованное (сделки нетто + фандинг);
+// плавающий PnL сейчас открытых позиций — справочно, в результат не входит
+function dayBreakdown(d, res, uplNow) {
   const realized = Number(d.realized_pnl) || 0;
   const other = res - realized;
   const p = (v) => usd(v, { sign: true });
   return `= закрыто ${p(realized)} + фандинг/прочее ${p(other)}` +
-    (Math.abs(uplDelta) >= 0.005 ? ` · открытые позиции ${p(uplDelta)} не входят` : "");
+    (Math.abs(uplNow) >= 0.005 ? ` · в открытых позициях сейчас ${p(uplNow)} — не входит` : "");
 }
 
 function renderSummary(d, lastSnap, diary) {
@@ -323,20 +364,34 @@ async function openDayModal(dayStr, d, allTrades) {
   renderTradesTable(modal.el.querySelector("#dm-trades"), dayTrades, strategies);
 }
 
-// ---------- График (ТЗ 5.5) ----------
-async function renderChart(days, today) {
+// ---------- График счёта (ТЗ 5.5) — свой период: день / неделя / месяц / всё время / даты ----------
+async function renderChart(today) {
   const el = root.querySelector("#dy-chart");
-  el.innerHTML = "";
   const isPct = period.chartUnits === "pct";
+  const r = period.chartRange;
+  let from, to = today;
+  if (r === "week") from = addDays(today, -6);
+  else if (r === "month") from = addDays(today, -29);
+  else if (r === "all") from = "2020-01-01";
+  else if (r === "custom") {
+    from = period.cfrom;
+    to = period.cto || today;
+    if (!from) { el.innerHTML = `<div class="muted">Выбери даты периода</div>`; return; }
+    if (to < from) { const t = from; from = to; to = t; }
+  } else from = today; // day
+
+  el.innerHTML = `<div class="loading">Загружаю…</div>`;
+  const days = await loadDaysRange(from, to);
+  el.innerHTML = "";
   let points = [];
   let goalLine = null, lossLine = null;
 
   // линии строим по РЕАЛИЗОВАННОМУ балансу (equity − плавающий PnL открытых позиций)
-  if (period.mode === "week" || period.mode === "month" || period.mode === "weeks") {
+  if (r !== "day") {
     points = days.filter((d) => d.end_equity != null)
       .map((d) => ({ time: d.day, value: Number(d.end_equity) - Number(d.end_upl || 0) }));
   }
-  // внутридневная линия для сегодняшнего дня, если период содержит сегодня и данных ≤1 дня
+  // режим «День» или в диапазоне ≤1 дня с данными — внутридневная линия
   if (points.length <= 1) {
     const day = days.find((d) => d.day === today) ? today : days[days.length - 1]?.day;
     if (day) {
