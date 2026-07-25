@@ -100,6 +100,52 @@ export async function loadVault() {
   return data ?? [];
 }
 
+// ---------- Чек-листы ----------
+
+export async function loadChecklists() {
+  const [ls, its] = await Promise.all([
+    sb.from("checklists").select("*").order("position").order("id"),
+    sb.from("checklist_items").select("*").order("position").order("id"),
+  ]);
+  if (ls.error) throw new Error(ls.error.message);
+  if (its.error) throw new Error(its.error.message);
+  return (ls.data ?? []).map((l) => ({
+    ...l,
+    items: (its.data ?? []).filter((i) => i.checklist_id === l.id),
+  }));
+}
+
+export async function createChecklist(name, threshold_pct) {
+  const { data, error } = await sb.from("checklists")
+    .insert({ name, threshold_pct }).select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateChecklist(id, patch) {
+  const { error } = await sb.from("checklists")
+    .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteChecklist(id) {
+  const { error } = await sb.from("checklists").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// Полная замена пунктов: конструктор сохраняет список целиком, порядок = позиция в массиве
+export async function replaceChecklistItems(checklistId, items) {
+  const { error } = await sb.from("checklist_items").delete().eq("checklist_id", checklistId);
+  if (error) throw new Error(error.message);
+  if (!items.length) return;
+  const rows = items.map((it, i) => ({
+    checklist_id: checklistId, title: it.title, note: it.note || null,
+    weight: it.weight, position: i,
+  }));
+  const { error: e2 } = await sb.from("checklist_items").insert(rows);
+  if (e2) throw new Error(e2.message);
+}
+
 // ---------- Стратегии ----------
 
 export async function loadStrategies(includeArchived = false) {

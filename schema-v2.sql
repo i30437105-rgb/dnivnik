@@ -186,6 +186,27 @@ create table if not exists research_results (
 );
 create index if not exists results_run_idx on research_results (run_id, block);
 
+-- ---------- Чек-листы (конструктор проверки правил стратегии перед входом) ----------
+-- Вес пункта: 1 (главный) = 3 балла, 2 = 2 балла, 3 = 1 балл.
+-- Процент = баллы отмеченных / баллы всех × 100; >= threshold_pct — вход разрешён.
+create table if not exists checklists (
+  id int generated always as identity primary key,
+  name text not null,
+  threshold_pct numeric not null default 50 check (threshold_pct >= 0 and threshold_pct <= 100),
+  position int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table if not exists checklist_items (
+  id int generated always as identity primary key,
+  checklist_id int not null references checklists(id) on delete cascade,
+  title text not null,
+  note text,
+  weight int not null default 2 check (weight in (1,2,3)),
+  position int not null default 0
+);
+create index if not exists checklist_items_cl_idx on checklist_items (checklist_id, position);
+
 -- ---------- Статус обновлений («данные актуальны на…») ----------
 create table if not exists sync_status (
   id text primary key,                                -- 'diary' | 'analytics' | 'meta'

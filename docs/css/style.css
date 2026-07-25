@@ -275,3 +275,31 @@ details.block[open] > summary { margin-bottom: 4px; }
   .pagehead { flex-direction: column; align-items: flex-start; }
   .side { width: 52px; flex-basis: 52px; }
 }
+
+/* ---------- Чек-листы (конструктор + прохождение) ---------- */
+.clist { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.clitem { display: flex; align-items: flex-start; gap: 12px; padding: 11px 14px;
+  border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-2);
+  cursor: pointer; user-select: none; transition: border-color .15s, background .15s; }
+.clitem:hover { border-color: var(--border); }
+.clitem.on { border-color: var(--pos-bd); background: var(--pos-dim); }
+.clitem .box { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 6px;
+  border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: #fff; margin-top: 1px; transition: background .15s, border-color .15s; }
+.clitem.on .box { background: var(--pos); border-color: var(--pos); }
+.clitem .t { font-weight: 600; line-height: 1.35; }
+.clitem .n { color: var(--text-muted); font-size: var(--fs-12); margin-top: 3px; line-height: 1.45; }
+.verdict { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 18px; border-radius: 12px; font-weight: 800; margin-top: 14px;
+  border: 1px solid var(--border-soft); background: var(--bg-2); color: var(--text-muted); }
+.verdict.ok { border-color: var(--pos-bd); background: var(--pos-dim); color: var(--pos); }
+.verdict.no { border-color: var(--neg-bd); background: var(--neg-dim); color: var(--neg); }
+.verdict .big { font-size: 19px; letter-spacing: .01em; }
+.tag.accent { color: var(--accent); background: rgba(139, 92, 246, .12);
+  border: 1px solid rgba(139, 92, 246, .35); }
+.ce-form { display: flex; flex-direction: column; gap: 14px; }
+.ce-form input[type="number"] { width: 130px; }
+.ce-row { border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px;
+  background: var(--bg-2); margin-bottom: 8px; }
+.ce-row select { width: 190px; flex: 0 0 auto; }
+.ce-row .seg .btn { padding: 4px 9px; }
