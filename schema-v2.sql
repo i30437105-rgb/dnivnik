@@ -203,9 +203,48 @@ create table if not exists checklist_items (
   title text not null,
   note text,
   weight int not null default 2 check (weight in (1,2,3)),
-  position int not null default 0
+  position int not null default 0,
+  screenshot_mode text not null default 'none' check (screenshot_mode in ('none','optional','required'))
 );
 create index if not exists checklist_items_cl_idx on checklist_items (checklist_id, position);
+
+-- Сделки по чек-листам: снимок заполнения на момент сделки + скриншоты + результат.
+-- Сохранение возможно только при pct >= threshold_pct (проверяется в UI).
+create table if not exists checklist_trades (
+  id bigint generated always as identity primary key,
+  day date not null,
+  checklist_id int references checklists(id) on delete set null,
+  checklist_name text not null,
+  threshold_pct numeric not null,
+  pct numeric not null,
+  created_at timestamptz not null default now(),
+  result_pnl numeric,
+  result_text text,
+  closed_at timestamptz
+);
+create index if not exists checklist_trades_day_idx on checklist_trades (day);
+create table if not exists checklist_trade_answers (
+  id bigint generated always as identity primary key,
+  trade_id bigint not null references checklist_trades(id) on delete cascade,
+  position int not null default 0,
+  title text not null,
+  note text,
+  weight int not null,
+  screenshot_mode text not null default 'none',
+  answer text check (answer in ('y','n'))
+);
+create index if not exists cl_answers_trade_idx on checklist_trade_answers (trade_id, position);
+create table if not exists checklist_attachments (
+  id uuid primary key default gen_random_uuid(),
+  trade_id bigint not null references checklist_trades(id) on delete cascade,
+  answer_id bigint references checklist_trade_answers(id) on delete cascade, -- null = скрин результата
+  path text not null,
+  name text,
+  size int,
+  mime text,
+  created_at timestamptz not null default now()
+);
+create index if not exists cl_attach_trade_idx on checklist_attachments (trade_id);
 
 -- ---------- Дневник рефлексии (заметки по дням, пункты с категориями) ----------
 create table if not exists reflection_categories (

@@ -140,10 +140,75 @@ export async function replaceChecklistItems(checklistId, items) {
   if (!items.length) return;
   const rows = items.map((it, i) => ({
     checklist_id: checklistId, title: it.title, note: it.note || null,
-    weight: it.weight, position: i,
+    weight: it.weight, position: i, screenshot_mode: it.screenshot_mode ?? "none",
   }));
   const { error: e2 } = await sb.from("checklist_items").insert(rows);
   if (e2) throw new Error(e2.message);
+}
+
+// ---------- Сделки по чек-листам ----------
+
+export async function loadChecklistTrades(from, to) {
+  const { data, error } = await sb.from("checklist_trades").select("*")
+    .gte("day", from).lte("day", to).order("created_at");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+// Создание сделки: снимок заполнения целиком; возвращает сделку и ответы с id (для привязки скринов)
+export async function createChecklistTrade(trade, answers) {
+  const { data: t, error } = await sb.from("checklist_trades").insert(trade).select().single();
+  if (error) throw new Error(error.message);
+  const rows = answers.map((a, i) => ({
+    trade_id: t.id, position: i, title: a.title, note: a.note || null,
+    weight: a.weight, screenshot_mode: a.screenshot_mode || "none", answer: a.answer ?? null,
+  }));
+  const { data: saved, error: e2 } = await sb.from("checklist_trade_answers").insert(rows).select();
+  if (e2) throw new Error(e2.message);
+  return { trade: t, answers: saved ?? [] };
+}
+
+export async function loadChecklistTradeFull(id) {
+  const [t, a, at] = await Promise.all([
+    sb.from("checklist_trades").select("*").eq("id", id).single(),
+    sb.from("checklist_trade_answers").select("*").eq("trade_id", id).order("position"),
+    sb.from("checklist_attachments").select("*").eq("trade_id", id).order("created_at"),
+  ]);
+  if (t.error) throw new Error(t.error.message);
+  const shots = [];
+  for (const s of at.data ?? []) {
+    const { data: signed } = await sb.storage.from("screens").createSignedUrl(s.path, 3600);
+    shots.push({ ...s, url: signed?.signedUrl });
+  }
+  return { trade: t.data, answers: a.data ?? [], shots };
+}
+
+const SHOT_MIME = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+
+export async function uploadChecklistShot(tradeId, answerId, file) {
+  const ext = SHOT_MIME[file.type];
+  if (!ext) throw new Error("Только PNG, JPG или WebP");
+  if (file.size > 10 * 1024 * 1024) throw new Error("Файл больше 10 МБ");
+  const path = `cl/${tradeId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb.storage.from("screens").upload(path, file, { contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { error: e2 } = await sb.from("checklist_attachments").insert({
+    trade_id: tradeId, answer_id: answerId, path, name: file.name, size: file.size, mime: file.type,
+  });
+  if (e2) throw new Error(e2.message);
+}
+
+export async function saveChecklistTradeResult(id, patch) {
+  const { error } = await sb.from("checklist_trades")
+    .update({ ...patch, closed_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteChecklistTrade(id) {
+  const { data: shots } = await sb.from("checklist_attachments").select("path").eq("trade_id", id);
+  if (shots?.length) await sb.storage.from("screens").remove(shots.map((s) => s.path));
+  const { error } = await sb.from("checklist_trades").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 // ---------- Дневник рефлексии ----------

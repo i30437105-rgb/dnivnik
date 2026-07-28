@@ -484,3 +484,19 @@ details.block[open] > summary { margin-bottom: 4px; }
   .rf-row, .rc-row, .ce-row { grid-template-columns: 1fr; }
   .ce-btns { justify-content: flex-end; }
 }
+
+/* ---------- Сделки по чек-листам ---------- */
+.cal-cell.ct.hasct { background: var(--accent-dim); border-color: rgba(139, 92, 246, .28); }
+.cal-cell.ct .ctnames { font-size: 10px; color: var(--text-dim); line-height: 1.35; margin-top: 2px; }
+.cal-cell.ct.pos .ctnames, .cal-cell.ct.neg .ctnames { color: inherit; opacity: .7; }
+.ctlist { display: flex; flex-direction: column; gap: 8px; }
+.ctrow { display: flex; align-items: center; gap: 14px; width: 100%; padding: 13px 15px;
+  background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: 11px;
+  color: var(--text); font-family: inherit; font-size: var(--fs-13); cursor: pointer;
+  transition: border-color .12s, background .12s; }
+.ctrow:hover { border-color: var(--border); background: var(--bg-3); }
+.ctrow .t { font-weight: 600; }
+.ce-selects { display: flex; flex-direction: column; gap: 7px; }
+@media (max-width: 700px) {
+  .cal-cell.ct .ctnames { display: none; }
+}

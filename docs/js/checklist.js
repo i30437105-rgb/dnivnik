@@ -4,6 +4,7 @@
 // Процент = баллы пунктов с ✓ / баллы всех пунктов × 100 (✕ и «без ответа» в числитель не идут).
 import { loadChecklists, createChecklist, updateChecklist, deleteChecklist, replaceChecklistItems } from "./api.js";
 import { esc, fmtRu, notify, confirmToast, openModal } from "./util.js";
+import { initClTrades } from "./cltrades.js";
 
 let root;
 let lists = [];
@@ -51,10 +52,12 @@ export function initChecklist(container) {
       <div class="titles"><h1>Чек-лист</h1><span class="sub">проверка правил стратегии перед входом</span></div>
       <div class="right"><button id="cl-new" class="btn primary">${IC.plus} Новый чек-лист</button></div>
     </header>
-    <div id="cl-body"><div class="loading">Загружаю…</div></div>`;
+    <div id="cl-body"><div class="loading">Загружаю…</div></div>
+    <div id="cl-trades-sec"></div>`;
   root.querySelector("#cl-new").onclick = () => openEditor(null);
   render().catch((e) => root.querySelector("#cl-body").innerHTML =
     `<div class="warn">Ошибка: ${esc(e.message)}</div>`);
+  initClTrades(root.querySelector("#cl-trades-sec"));
 }
 
 async function render() {
@@ -203,10 +206,18 @@ function renderOne(list) {
 }
 
 // ---------- Модалка-конструктор ----------
+const SHOT_LABEL = { none: "скрин не нужен", optional: "скрин — можно", required: "скрин обязателен" };
+
 function openEditor(list) {
   // рабочая копия пунктов; сохраняется целиком по кнопке
-  let items = (list?.items ?? []).map((it) => ({ title: it.title, note: it.note ?? "", weight: it.weight }));
-  if (!items.length) items = [{ title: "", note: "", weight: 1 }, { title: "", note: "", weight: 2 }, { title: "", note: "", weight: 3 }];
+  let items = (list?.items ?? []).map((it) => ({
+    title: it.title, note: it.note ?? "", weight: it.weight, screenshot_mode: it.screenshot_mode ?? "none",
+  }));
+  if (!items.length) items = [
+    { title: "", note: "", weight: 1, screenshot_mode: "none" },
+    { title: "", note: "", weight: 2, screenshot_mode: "none" },
+    { title: "", note: "", weight: 3, screenshot_mode: "none" },
+  ];
 
   const modal = openModal(`
     <h2>${list ? "Редактировать чек-лист" : "Новый чек-лист"}</h2>
@@ -248,9 +259,14 @@ function openEditor(list) {
           </div>
           <input type="text" class="ce-note" placeholder="Пояснение — что именно проверить (необязательно)" value="${esc(it.note)}">
         </div>
-        <select class="ce-weight" title="Вес пункта">
-          ${[1, 2, 3].map((w) => `<option value="${w}" ${it.weight === w ? "selected" : ""}>${WEIGHT_LABEL[w]} · ${PTS[w]} б.</option>`).join("")}
-        </select>
+        <div class="ce-selects">
+          <select class="ce-weight" title="Вес пункта">
+            ${[1, 2, 3].map((w) => `<option value="${w}" ${it.weight === w ? "selected" : ""}>${WEIGHT_LABEL[w]} · ${PTS[w]} б.</option>`).join("")}
+          </select>
+          <select class="ce-shot" title="Скриншот при заполнении">
+            ${Object.entries(SHOT_LABEL).map(([v, l]) => `<option value="${v}" ${it.screenshot_mode === v ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </div>
         <div class="ce-btns">
           <button type="button" class="btn ghost icon ce-up" title="Выше" ${i === 0 ? "disabled" : ""}>${IC.up}</button>
           <button type="button" class="btn ghost icon ce-down" title="Ниже" ${i === items.length - 1 ? "disabled" : ""}>${IC.down}</button>
@@ -263,6 +279,7 @@ function openEditor(list) {
       row.querySelector(".ce-title").oninput = (e) => { items = items.map((x, k) => k === i ? { ...x, title: e.target.value } : x); };
       row.querySelector(".ce-note").oninput = (e) => { items = items.map((x, k) => k === i ? { ...x, note: e.target.value } : x); };
       row.querySelector(".ce-weight").onchange = (e) => { items = items.map((x, k) => k === i ? { ...x, weight: Number(e.target.value) } : x); updTotal(); };
+      row.querySelector(".ce-shot").onchange = (e) => { items = items.map((x, k) => k === i ? { ...x, screenshot_mode: e.target.value } : x); };
       row.querySelector(".ce-up").onclick = () => { items = swap(items, i, i - 1); drawItems(); };
       row.querySelector(".ce-down").onclick = () => { items = swap(items, i, i + 1); drawItems(); };
       row.querySelector(".ce-rm").onclick = () => { items = items.filter((_, k) => k !== i); drawItems(); };
@@ -270,7 +287,7 @@ function openEditor(list) {
   };
   drawItems();
 
-  modal.el.querySelector("#ce-add").onclick = () => { items = [...items, { title: "", note: "", weight: 1 }]; drawItems(); };
+  modal.el.querySelector("#ce-add").onclick = () => { items = [...items, { title: "", note: "", weight: 1, screenshot_mode: "none" }]; drawItems(); };
   modal.el.querySelector("#ce-cancel").onclick = modal.close;
 
   modal.el.querySelector("#ce-save").onclick = async () => {
