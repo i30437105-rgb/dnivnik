@@ -80,21 +80,26 @@ function draw() {
     body.querySelector("#cl-new2").onclick = () => openEditor(null);
     return;
   }
-  let activeId = getActive();
-  if (!lists.some((l) => l.id === activeId)) activeId = lists[0].id;
-  setActive(activeId);
-  const active = lists.find((l) => l.id === activeId);
+  // Чипы чек-листов: клик открывает быструю проверку МОДАЛЬНЫМ окном —
+  // акцент страницы на календаре сделок ниже (решение Ивана)
+  const activeId = getActive();
   body.innerHTML = `
-    <div class="cltabs">
+    <div class="cltabs" style="margin-bottom:6px">
       ${lists.map((l) => `<button class="cltab ${l.id === activeId ? "on" : ""}" data-id="${l.id}">
         ${esc(l.name)}<span class="cnt num">${l.items.length}</span></button>`).join("")}
-    </div>
-    <section class="clcard" id="cl-${active.id}"></section>`;
+    </div>`;
   body.querySelectorAll(".cltab").forEach((b) => b.onclick = () => {
-    setActive(Number(b.dataset.id));
-    draw();
+    const id = Number(b.dataset.id);
+    setActive(id);
+    body.querySelectorAll(".cltab").forEach((x) => x.classList.toggle("on", x === b));
+    openListModal(lists.find((l) => l.id === id));
   });
-  renderOne(active);
+}
+
+// Быстрая проверка чек-листа во всплывающем окне
+function openListModal(list) {
+  const modal = openModal(`<div class="clcard inmodal" id="cl-${list.id}"></div>`, { wide: true });
+  renderOne(list, modal);
 }
 
 function calc(list, marks) {
@@ -104,8 +109,8 @@ function calc(list, marks) {
   return { total, got, pct, allowed: pct >= Number(list.threshold_pct) };
 }
 
-function renderOne(list) {
-  const el = root.querySelector(`#cl-${list.id}`);
+function renderOne(list, modal) {
+  const el = modal.el.querySelector(`#cl-${list.id}`);
   if (!el) return;
   const marks = loadPass(list.id);
   const { total, got, pct, allowed } = calc(list, marks);
@@ -189,17 +194,18 @@ function renderOne(list) {
       const next = { ...marks };
       if (next[id] === v) delete next[id]; else next[id] = v;
       savePass(list.id, next);
-      renderOne(list);
+      renderOne(list, modal);
     });
   });
-  el.querySelector(".cl-reset").onclick = () => { savePass(list.id, {}); renderOne(list); };
-  el.querySelector(".cl-edit").onclick = () => openEditor(list);
+  el.querySelector(".cl-reset").onclick = () => { savePass(list.id, {}); renderOne(list, modal); };
+  el.querySelector(".cl-edit").onclick = () => { modal.close(); openEditor(list); };
   el.querySelector(".cl-del").onclick = async () => {
     if (!(await confirmToast(`Удалить чек-лист «${list.name}»?`))) return;
     try {
       await deleteChecklist(list.id);
       localStorage.removeItem(passKey(list.id));
       notify("Чек-лист удалён");
+      modal.close();
       render();
     } catch (e) { notify("Ошибка: " + e.message, "error"); }
   };

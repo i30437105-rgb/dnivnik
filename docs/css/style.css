@@ -500,3 +500,9 @@ details.block[open] > summary { margin-bottom: 4px; }
 @media (max-width: 700px) {
   .cal-cell.ct .ctnames { display: none; }
 }
+/* Карточка чек-листа внутри модального окна — без двойной рамки */
+.clcard.inmodal { border: none; box-shadow: none; background: transparent; border-radius: 0; overflow: visible; }
+.clcard.inmodal .clhead { padding: 0 36px 14px 0; }
+.clcard.inmodal .clrows { padding: 6px 0 10px; }
+.clcard.inmodal .clprogress { padding: 14px 2px 4px; }
+.clcard.inmodal .clverdict-wrap { padding: 14px 0 0; }
