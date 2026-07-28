@@ -214,6 +214,17 @@ export function busyButton(btn, fn) {
 }
 
 // ---------- Модальное окно ----------
+// Лайтбокс: скриншот крупно поверх любых модалок, в стилистике терминала
+export function openLightbox(url) {
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.innerHTML = `<button class="modal-close" title="Закрыть">✕</button><img src="${esc(url)}" alt="скриншот">`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.onclick = (e) => { if (e.target !== box.querySelector("img")) close(); };
+  box.querySelector(".modal-close").onclick = close;
+}
+
 export function openModal(html, { wide = false } = {}) {
   const back = document.createElement("div");
   back.className = "modal-back";

@@ -2,7 +2,7 @@
 import {
   loadExecutionsWindow, saveTradeNote, uploadAttachment, loadAttachments, deleteAttachment,
 } from "./api.js";
-import { esc, usd, price, fmtRu, fmtDT, sortableTable, notify, confirmToast } from "./util.js";
+import { esc, usd, price, fmtRu, fmtDT, sortableTable, notify, confirmToast, openLightbox } from "./util.js";
 
 export async function renderTradeCard(holder, trade, strategies) {
   const note = trade.trade_notes ?? {};
@@ -71,10 +71,11 @@ export async function renderTradeCard(holder, trade, strategies) {
     const atts = await loadAttachments(trade.id);
     box.innerHTML = atts.length ? atts.map((a) => `
       <div class="att">
-        <a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.name ?? "скриншот")}"></a>
+        <span class="zoom" data-url="${esc(a.url)}"><img src="${esc(a.url)}" alt="${esc(a.name ?? "скриншот")}"></span>
         <div class="row small"><a href="${esc(a.url)}" download>${esc(a.name ?? "файл")}</a>
         <button class="btn small att-del" data-id="${a.id}">Удалить</button></div>
       </div>`).join("") : `<div class="muted small">Нет скриншотов</div>`;
+    box.querySelectorAll(".zoom").forEach((el) => el.onclick = () => openLightbox(el.dataset.url));
     box.querySelectorAll(".att-del").forEach((b) => b.onclick = async () => {
       if (!(await confirmToast("Удалить скриншот? Действие необратимо."))) return;
       await deleteAttachment(atts.find((a) => a.id === b.dataset.id));

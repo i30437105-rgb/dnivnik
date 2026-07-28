@@ -5,7 +5,7 @@ import {
   loadChecklists, loadChecklistTrades, createChecklistTrade, loadChecklistTradeFull,
   uploadChecklistShot, saveChecklistTradeResult, deleteChecklistTrade,
 } from "./api.js";
-import { esc, usd, fmtRu, fmtDay, fmtDT, todayLocal, addDays, notify, confirmToast, openModal } from "./util.js";
+import { esc, usd, fmtRu, fmtDay, fmtDT, todayLocal, addDays, notify, confirmToast, openModal, openLightbox } from "./util.js";
 
 let root;
 let anchor; // YYYY-MM календаря сделок
@@ -292,7 +292,7 @@ async function openTradeView(id) {
       <span class="clbadge num">порог ${fmtRu(Number(trade.threshold_pct), 0)}%</span>
       <span class="clbadge">${fmtDT(trade.created_at)}</span>
       <span style="flex:1"></span>
-      <button class="btn ghost icon danger" id="tv-del" title="Удалить сделку">${IC.x}</button>
+      <button class="btn ghost danger" id="tv-del">${IC.x} Удалить сделку</button>
     </div>
     <div>
       ${answers.map((a) => `
@@ -302,7 +302,7 @@ async function openTradeView(id) {
           <div style="flex:1;min-width:0">
             <div class="t">${esc(a.title)}</div>
             ${(byAnswer[a.id] ?? []).length ? `<div class="row" style="gap:8px;margin-top:8px">
-              ${byAnswer[a.id].map((s) => `<a href="${esc(s.url ?? "#")}" target="_blank" rel="noopener" class="att"><img src="${esc(s.url ?? "")}" alt="скрин"></a>`).join("")}
+              ${byAnswer[a.id].map((s) => `<span class="att zoom" data-url="${esc(s.url ?? "")}"><img src="${esc(s.url ?? "")}" alt="скрин"></span>`).join("")}
             </div>` : ""}
           </div>
           <span class="wtag ${WEIGHT_TAG[a.weight]}">${WEIGHT_LABEL[a.weight]}</span>
@@ -319,11 +319,14 @@ async function openTradeView(id) {
       <div class="row" style="gap:8px">
         <button class="btn small ghost" id="tv-attach" type="button">${IC.clip} Скриншот результата</button>
         <span id="tv-files" class="row" style="gap:8px"></span>
-        ${resultShots.map((s) => `<a href="${esc(s.url ?? "#")}" target="_blank" rel="noopener" class="att"><img src="${esc(s.url ?? "")}" alt="скрин"></a>`).join("")}
+        ${resultShots.map((s) => `<span class="att zoom" data-url="${esc(s.url ?? "")}"><img src="${esc(s.url ?? "")}" alt="скрин"></span>`).join("")}
       </div>
       <div class="ce-footer"><span></span>
         <button class="btn primary" id="tv-save" type="button">Сохранить результат</button></div>
     </div>`, { wide: true });
+
+  // клик по скриншоту — крупный просмотр поверх модалки
+  modal.el.querySelectorAll(".att.zoom").forEach((el) => el.onclick = () => openLightbox(el.dataset.url));
 
   modal.el.querySelector("#tv-attach").onclick = () => {
     const inp = document.createElement("input");

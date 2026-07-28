@@ -506,3 +506,10 @@ details.block[open] > summary { margin-bottom: 4px; }
 .clcard.inmodal .clrows { padding: 6px 0 10px; }
 .clcard.inmodal .clprogress { padding: 14px 2px 4px; }
 .clcard.inmodal .clverdict-wrap { padding: 14px 0 0; }
+/* Лайтбокс: крупный просмотр скриншота поверх модалок */
+.lightbox { position: fixed; inset: 0; z-index: 80; background: rgba(8, 7, 6, .88);
+  display: flex; align-items: center; justify-content: center; padding: 26px; cursor: zoom-out; }
+.lightbox img { max-width: 94vw; max-height: 92vh; border-radius: 12px;
+  border: 1px solid var(--border); box-shadow: var(--shadow-modal); cursor: default; }
+.lightbox .modal-close { position: fixed; top: 16px; right: 18px; z-index: 81; }
+.att .zoom, .att.zoom { cursor: zoom-in; display: inline-block; line-height: 0; }
