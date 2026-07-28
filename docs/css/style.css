@@ -3,6 +3,7 @@
    Все значения — из tokens.css (var(--...)), хардкод запрещён.
    ============================================================ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; } /* атрибут hidden сильнее классов-раскладок (.row и т.п.) */
 html, body { background: var(--bg-0); color: var(--text);
   font-family: var(--font-sans); font-size: var(--fs-14); line-height: 1.45;
   -webkit-font-smoothing: antialiased; }
@@ -279,12 +280,59 @@ details.block[open] > summary { margin-bottom: 4px; }
   .grid2, .grid3 { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
-  .tabpane { padding: 16px 12px 60px; }
-  .cards, .stats, .form { grid-template-columns: 1fr; }
-  .cal-cell { min-height: 56px; padding: 5px 6px; }
-  .cal-cell .r { font-size: 11px; } .cal-cell .rp, .cal-cell .cnt { display: none; }
-  .pagehead { flex-direction: column; align-items: flex-start; }
-  .side { width: 52px; flex-basis: 52px; }
+  /* Навигация: сайдбар превращается в нижний таб-бар */
+  .layout { flex-direction: column; }
+  .side { position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: auto;
+    flex: none; flex-direction: row; justify-content: space-around; align-items: center;
+    padding: 5px 6px calc(5px + env(safe-area-inset-bottom)); gap: 0;
+    border-right: none; border-top: 1px solid var(--chart-grid); }
+  .side .logo, .side .spacer { display: none; }
+  .side .tab, .side-btn { width: 44px; height: 44px; }
+  .side .tab.on::before { left: 50%; top: auto; bottom: -6px; width: 20px; height: 3px;
+    border-radius: 3px 3px 0 0; transform: translateX(-50%); }
+  .content { width: 100%; }
+  .tabpane { padding: 14px 12px calc(86px + env(safe-area-inset-bottom)); }
+
+  /* Сетки и карточки */
+  .cards, .form { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .card .v { font-size: 22px; }
+  .card.hero .v { font-size: 26px; }
+  .block { padding: 13px 12px; }
+
+  /* Шапка страницы */
+  .pagehead { flex-direction: column; align-items: stretch; gap: 12px; }
+  .pagehead .titles { flex-wrap: wrap; gap: 8px 12px; }
+  .pagehead .right { width: 100%; justify-content: space-between; }
+  .status { align-items: flex-start; text-align: left; }
+  .seg { flex-wrap: wrap; }
+  .plabel { min-width: 0; }
+
+  /* Календари */
+  .cal-head { gap: 4px; }
+  .cal-grid { gap: 4px; }
+  .cal-cell, .cal-cell.rf { min-height: 54px; padding: 5px 6px; border-radius: 8px; }
+  .cal-cell .r { font-size: 10.5px; }
+  .cal-cell .rp, .cal-cell .cnt { display: none; }
+  .cal-cell .ric { top: 5px; right: 5px; }
+  .cal-cell .ric svg { width: 11px; height: 11px; }
+  .weekrow .wk { min-width: 0; width: 100%; }
+
+  /* Модалки и тосты */
+  .modal-back { padding: 10px 8px 24px; }
+  .modal-body { padding: 16px 14px; }
+  .modal-body > h2 { font-size: 16px; }
+  .toast-wrap { padding: 0 10px; bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .toast { max-width: 100%; flex-wrap: wrap; }
+  .toast .row { margin-left: 0; }
+
+  /* Карточка сделки, скриншоты */
+  .att img { max-width: 128px; max-height: 88px; }
+
+  /* Чек-лист: бейдж веса переезжает под формулировку (текст не сжимается в столбик) */
+  .clitem { flex-wrap: wrap; }
+  .clitem > div:not(.yn) { min-width: 62% !important; }
+  .clitem .wtag { order: 3; margin-left: 47px; margin-top: -2px; }
 }
 
 /* ---------- Чек-листы (дизайн: handoff/Чек-лист.dc.html) ---------- */
@@ -430,4 +478,9 @@ details.block[open] > summary { margin-bottom: 4px; }
 .cal-cell.rf.has .cnt { color: var(--pos); opacity: .75; }
 .rf-row { grid-template-columns: 1fr 210px auto; }
 .rf-row textarea { flex: 1; min-width: 0; }
+.rc-row { grid-template-columns: 64px 1fr 150px auto; }
 .rc-row input.rc-icon { font-size: 16px; }
+@media (max-width: 760px) {
+  .rf-row, .rc-row, .ce-row { grid-template-columns: 1fr; }
+  .ce-btns { justify-content: flex-end; }
+}

@@ -43,7 +43,7 @@ export function initWaves(container) {
 
     <section class="block">
       <h2>⛔ Три железных правила (нарушено — счёт неверен)</h2>
-      <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+      <div class="cards">
         <div class="card"><div class="k">Правило волны 2</div>
           <div style="font-size:14px;line-height:1.5">Волна 2 <b>никогда не заходит за старт волны 1</b>.
           Перекрыла — это не волна 2, счёт с нуля.</div></div>

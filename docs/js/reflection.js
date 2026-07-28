@@ -179,7 +179,7 @@ function openCatsEditor() {
   const rowsEl = modal.el.querySelector("#rc-rows");
   const draw = () => {
     rowsEl.innerHTML = rows.map((c, i) => `
-      <div class="ce-row rc-row" data-i="${i}" style="grid-template-columns:64px 1fr 150px auto">
+      <div class="ce-row rc-row" data-i="${i}">
         <input type="text" class="rc-icon" maxlength="4" value="${esc(c.icon)}" title="Эмодзи" style="text-align:center">
         <input type="text" class="rc-name" placeholder="Название категории" value="${esc(c.name)}">
         <select class="rc-color">${Object.entries(COLOR_LABEL).map(([v, l]) =>
