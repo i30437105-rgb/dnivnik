@@ -506,6 +506,35 @@ details.block[open] > summary { margin-bottom: 4px; }
 .clcard.inmodal .clrows { padding: 6px 0 10px; }
 .clcard.inmodal .clprogress { padding: 14px 2px 4px; }
 .clcard.inmodal .clverdict-wrap { padding: 14px 0 0; }
+/* Калькулятор позиции (вкладка «Чек-лист») */
+.calc { display: grid; grid-template-columns: 1fr 1.15fr; gap: 20px; margin-top: 16px; }
+.calc-in { display: flex; flex-direction: column; gap: 11px; }
+.calc-in label { font-size: var(--fs-12); color: var(--text-muted); display: flex;
+  flex-direction: column; gap: 6px; }
+.calc-out { background: var(--bg-inset); border: 1px solid var(--border-hair); border-radius: 12px;
+  padding: 15px 17px; display: flex; flex-direction: column; gap: 10px; align-self: start; }
+.calc-main { padding-bottom: 11px; border-bottom: 1px solid var(--border-hair); }
+.calc-main .lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 5px; }
+.calc-main .big { font-size: 27px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1;
+  margin-bottom: 4px; }
+.calc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-hair); }
+.calc-row .t { font-weight: 600; font-size: var(--fs-13); }
+.calc-row .sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+.calc-row .nums { text-align: right; flex: 0 0 auto; }
+.calc-row .move { font-size: 17px; font-weight: 700; }
+.calc-row .usd { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.calc-row.neg { background: rgba(240, 85, 63, .08); border-color: var(--neg-bd); }
+.calc-row.neg .move { color: var(--neg); }
+.calc-row.pos { background: var(--pos-dim); border-color: var(--pos-bd); }
+.calc-row.pos .move { color: var(--pos); }
+.calc-foot { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px;
+  color: var(--text-muted); padding-top: 3px; }
+@media (max-width: 760px) {
+  .calc { grid-template-columns: 1fr; gap: 14px; }
+}
+
 /* Лайтбокс: крупный просмотр скриншота поверх модалок */
 .lightbox { position: fixed; inset: 0; z-index: 80; background: rgba(8, 7, 6, .88);
   display: flex; align-items: center; justify-content: center; padding: 26px; cursor: zoom-out; }

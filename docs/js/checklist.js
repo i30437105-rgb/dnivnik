@@ -5,6 +5,7 @@
 import { loadChecklists, createChecklist, updateChecklist, deleteChecklist, replaceChecklistItems } from "./api.js";
 import { esc, fmtRu, notify, confirmToast, openModal } from "./util.js";
 import { initClTrades } from "./cltrades.js";
+import { openCalc } from "./calc.js";
 
 let root;
 let lists = [];
@@ -26,6 +27,7 @@ const IC = {
   down: svg('<path d="M12 5v13.5M6 12.5l6 6 6-6"/>', 2.1),
   vOk: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>`,
   vNo: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/><path d="M7 12h10"/></svg>`,
+  calc: svg('<rect x="5.5" y="3.5" width="13" height="17" rx="2.2"/><path d="M8.6 7.4h6.8M8.6 12h.01M12 12h.01M15.4 12h.01M8.6 15.6h.01M12 15.6h.01M15.4 15.6h.01"/>', 1.9),
   vNeutral: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6.5h12M6 12h12M6 17.5h7"/></svg>`,
   empty: `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5H7.2A2.2 2.2 0 0 0 5 6.7v11.6a2.2 2.2 0 0 0 2.2 2.2h9.6a2.2 2.2 0 0 0 2.2-2.2V6.7a2.2 2.2 0 0 0-2.2-2.2H15"/><path d="M9 3.6h6v2.6H9Z"/><path d="m8.6 12.2 2 2 4.4-4.4"/></svg>`,
 };
@@ -50,11 +52,15 @@ export function initChecklist(container) {
   root.innerHTML = `
     <header class="pagehead">
       <div class="titles"><h1>Чек-лист</h1><span class="sub">проверка правил стратегии перед входом</span></div>
-      <div class="right"><button id="cl-new" class="btn primary">${IC.plus} Новый чек-лист</button></div>
+      <div class="right">
+        <button id="cl-calc" class="btn ghost">${IC.calc} Калькулятор</button>
+        <button id="cl-new" class="btn primary">${IC.plus} Новый чек-лист</button>
+      </div>
     </header>
     <div id="cl-body"><div class="loading">Загружаю…</div></div>
     <div id="cl-trades-sec"></div>`;
   root.querySelector("#cl-new").onclick = () => openEditor(null);
+  root.querySelector("#cl-calc").onclick = openCalc;
   render().catch((e) => root.querySelector("#cl-body").innerHTML =
     `<div class="warn">Ошибка: ${esc(e.message)}</div>`);
   initClTrades(root.querySelector("#cl-trades-sec"));
