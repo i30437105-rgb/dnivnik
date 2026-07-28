@@ -207,6 +207,25 @@ create table if not exists checklist_items (
 );
 create index if not exists checklist_items_cl_idx on checklist_items (checklist_id, position);
 
+-- ---------- Дневник рефлексии (заметки по дням, пункты с категориями) ----------
+create table if not exists reflection_categories (
+  id int generated always as identity primary key,
+  name text not null,
+  icon text not null default '📝',                    -- эмодзи, настраивается пользователем
+  color text not null default 'muted' check (color in ('neg','pos','warn','accent','muted')),
+  position int not null default 0
+);
+create table if not exists reflection_items (
+  id bigint generated always as identity primary key,
+  day date not null,
+  position int not null default 0,
+  text text not null,
+  category_id int references reflection_categories(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists reflection_items_day_idx on reflection_items (day, position);
+
 -- ---------- Статус обновлений («данные актуальны на…») ----------
 create table if not exists sync_status (
   id text primary key,                                -- 'diary' | 'analytics' | 'meta'

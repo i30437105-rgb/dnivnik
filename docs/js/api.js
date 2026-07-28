@@ -146,6 +146,57 @@ export async function replaceChecklistItems(checklistId, items) {
   if (e2) throw new Error(e2.message);
 }
 
+// ---------- Дневник рефлексии ----------
+
+export async function loadReflectionCats() {
+  const { data, error } = await sb.from("reflection_categories").select("*").order("position").order("id");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function addReflectionCat(cat) {
+  const { error } = await sb.from("reflection_categories").insert(cat);
+  if (error) throw new Error(error.message);
+}
+
+export async function updReflectionCat(id, patch) {
+  const { error } = await sb.from("reflection_categories").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function delReflectionCat(id) {
+  const { error } = await sb.from("reflection_categories").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+// Для календаря: по каким дням месяца есть заметки и сколько пунктов
+export async function loadReflectionDays(from, to) {
+  const { data, error } = await sb.from("reflection_items").select("day").gte("day", from).lte("day", to);
+  if (error) throw new Error(error.message);
+  const counts = {};
+  for (const r of data ?? []) counts[r.day] = (counts[r.day] || 0) + 1;
+  return counts;
+}
+
+export async function loadReflectionItems(day) {
+  const { data, error } = await sb.from("reflection_items").select("*")
+    .eq("day", day).order("position").order("id");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+// Полная замена пунктов дня (заметка сохраняется целиком, порядок = позиция в массиве)
+export async function replaceReflectionItems(day, items) {
+  const { error } = await sb.from("reflection_items").delete().eq("day", day);
+  if (error) throw new Error(error.message);
+  if (!items.length) return;
+  const rows = items.map((it, i) => ({
+    day, position: i, text: it.text, category_id: it.category_id ?? null,
+  }));
+  const { error: e2 } = await sb.from("reflection_items").insert(rows);
+  if (e2) throw new Error(e2.message);
+}
+
 // ---------- Стратегии ----------
 
 export async function loadStrategies(includeArchived = false) {

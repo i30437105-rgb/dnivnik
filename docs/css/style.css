@@ -421,3 +421,13 @@ details.block[open] > summary { margin-bottom: 4px; }
   .wtag { margin-left: 44px; order: 3; }
   .clitem { flex-wrap: wrap; }
 }
+
+/* ---------- Рефлексия ---------- */
+.cal-cell.rf { cursor: pointer; min-height: 74px; }
+.cal-cell.rf:hover { border-color: #4a4239; }
+.cal-cell.rf.has { background: var(--pos-dim); border-color: var(--pos-bd); }
+.cal-cell.rf.has .d { color: var(--pos); }
+.cal-cell.rf.has .cnt { color: var(--pos); opacity: .75; }
+.rf-row { grid-template-columns: 1fr 210px auto; }
+.rf-row textarea { flex: 1; min-width: 0; }
+.rc-row input.rc-icon { font-size: 16px; }
