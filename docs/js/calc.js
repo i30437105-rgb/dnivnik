@@ -1,11 +1,10 @@
-// Калькулятор позиции (вкладка «Чек-лист»).
-// Ввод: депозит, % депозита на одну сделку (маржа), плечо, целевые % убытка/прибыли
-// ОТ ТЕЛА ДЕПОЗИТА, цена актива (необязательно), направление лонг/шорт.
-// Вывод: сумма входа (маржа), объём позиции и кол-во актива, цены и ход до стопа/тейка,
-// R:R, ориентировочная ликвидация. Комиссии и фандинг не учитываются.
+// Калькуляторы (вкладка «Чек-лист»): одна модалка, две вкладки-чипа.
+// «Позиция» — сумма входа, уровни стопа/тейка. «Прирост депозита» — сложный процент с кубышкой (growth.js).
 import { esc, fmtRu, price, openModal } from "./util.js";
+import { renderGrowth } from "./growth.js";
 
 const KEY = "clcalc";
+const TAB_KEY = "clcalc-tab";
 const DEFAULTS = { depo: 1000, use: 10, lev: 10, loss: 1, profit: 3, price: "", side: "long" };
 
 const loadSaved = () => {
@@ -13,23 +12,42 @@ const loadSaved = () => {
   catch { return { ...DEFAULTS }; }
 };
 
-const num = (el) => {
+export const num = (el) => {
   const v = Number(String(el.value).replace(",", ".").replace(/\s/g, ""));
   return Number.isFinite(v) && v > 0 ? v : 0;
 };
 
-const money = (v) => `$${fmtRu(v, v >= 1000 ? 0 : 2)}`;
+export const money = (v) => v == null || Number.isNaN(v) ? "—" : `$${fmtRu(v, Math.abs(v) >= 1000 ? 0 : 2)}`;
 
 // Кол-во актива: BTC по $60 000 — 4 знака, дешёвые монеты — крупнее
 const qtyFmt = (q) => fmtRu(q, q >= 100 ? 2 : q >= 1 ? 3 : 4);
 
 export function openCalc() {
+  const modal = openModal(`
+    <h2>Калькулятор</h2>
+    <div class="cltabs" style="margin:12px 0 2px">
+      <button type="button" class="cltab" data-t="pos">Позиция</button>
+      <button type="button" class="cltab" data-t="growth">Прирост депозита</button>
+    </div>
+    <div id="calc-body"></div>`, { wide: true });
+
+  const body = modal.el.querySelector("#calc-body");
+  const show = (tab) => {
+    localStorage.setItem(TAB_KEY, tab);
+    modal.el.querySelectorAll(".cltab").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
+    tab === "growth" ? renderGrowth(body) : renderPosition(body);
+  };
+  modal.el.querySelectorAll(".cltab").forEach((b) => b.onclick = () => show(b.dataset.t));
+  show(localStorage.getItem(TAB_KEY) === "growth" ? "growth" : "pos");
+}
+
+// ---------- Вкладка «Позиция» ----------
+function renderPosition(root) {
   const st = loadSaved();
   let side = st.side === "short" ? "short" : "long";
 
-  const modal = openModal(`
-    <h2>Калькулятор позиции</h2>
-    <p class="muted small" style="margin:4px 0 0">Убыток и прибыль задаются в процентах от реального тела депозита.
+  root.innerHTML = `
+    <p class="muted small" style="margin:8px 0 0">Убыток и прибыль задаются в процентах от реального тела депозита.
     Цена актива нужна только для расчёта конкретных уровней стопа и тейка.</p>
     <div class="calc">
       <div class="calc-in">
@@ -53,14 +71,14 @@ export function openCalc() {
         </div>
       </div>
       <div class="calc-out" id="cc-out"></div>
-    </div>`, { wide: true });
+    </div>`;
 
-  const out = modal.el.querySelector("#cc-out");
+  const out = root.querySelector("#cc-out");
   const fields = ["depo", "use", "lev", "loss", "profit", "price"];
 
   const recalc = () => {
-    const v = Object.fromEntries(fields.map((k) => [k, num(modal.el.querySelector(`#cc-${k}`))]));
-    localStorage.setItem(KEY, JSON.stringify({ ...v, price: modal.el.querySelector("#cc-price").value, side }));
+    const v = Object.fromEntries(fields.map((k) => [k, num(root.querySelector(`#cc-${k}`))]));
+    localStorage.setItem(KEY, JSON.stringify({ ...v, price: root.querySelector("#cc-price").value, side }));
 
     if (!v.depo || !v.use || !v.lev) {
       out.innerHTML = `<div class="muted" style="padding:8px 2px">Укажи депозит, процент на сделку и плечо —
@@ -118,11 +136,11 @@ export function openCalc() {
       </div>`;
   };
 
-  modal.el.querySelectorAll("#cc-side .cs-btn").forEach((b) => b.onclick = () => {
+  root.querySelectorAll("#cc-side .cs-btn").forEach((b) => b.onclick = () => {
     side = b.dataset.s;
-    modal.el.querySelectorAll("#cc-side .cs-btn").forEach((x) => x.classList.toggle("on", x === b));
+    root.querySelectorAll("#cc-side .cs-btn").forEach((x) => x.classList.toggle("on", x === b));
     recalc();
   });
-  fields.forEach((k) => modal.el.querySelector(`#cc-${k}`).oninput = recalc);
+  fields.forEach((k) => root.querySelector(`#cc-${k}`).oninput = recalc);
   recalc();
 }

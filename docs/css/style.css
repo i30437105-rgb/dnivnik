@@ -293,6 +293,9 @@ details.block[open] > summary { margin-bottom: 4px; }
   .content { width: 100%; }
   .tabpane { padding: 14px 12px calc(86px + env(safe-area-inset-bottom)); }
 
+  /* iOS зумит страницу при фокусе поля, если шрифт < 16px — и не отзумливает обратно */
+  input, select, textarea { font-size: 16px; }
+
   /* Сетки и карточки */
   .cards, .form { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
