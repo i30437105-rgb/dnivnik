@@ -1,6 +1,6 @@
 // Вкладка «Аналитика монет»: три блока по ТЗ §4
 import { runAnalyze, loadLatestRun, fetchMetaMissing, saveSettings } from "./api.js";
-import { state, esc, usd, pct, price, fmtDT, sortableTable, busyButton, hoursMinutes } from "./util.js";
+import { state, esc, usd, pct, price, fmtDT, sortableTable, busyButton, hoursMinutes, isMobile } from "./util.js";
 import { openCoinCard } from "./coincard.js";
 
 let root;
@@ -110,6 +110,39 @@ async function render() {
 
   const by = (b) => results.filter((r) => r.block === b);
   const open = (row) => openCoinCard(row.base, row.symbol);
+
+  // Мобила (спека 2e): карточные строки — тикер, ключевая метрика крупно, остальное мелко
+  const mobList = (cont, rows, main, sub, emptyText) => {
+    cont.innerHTML = rows.length ? `<div class="trlist" style="padding:10px 12px 12px">${rows.map((r) => `
+      <button type="button" class="trowc" data-s="${esc(r.symbol)}">
+        <div style="flex:1;min-width:0">
+          <div class="sym num">${esc(r.base)} <span class="muted" style="font-size:11px">${esc(r.symbol)}</span></div>
+          <div class="meta num">${sub(r)}</div>
+        </div>
+        <div class="pnl num" style="font-size:16px">${main(r)}</div>
+        <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </button>`).join("")}</div>` : `<div class="muted" style="padding:14px 18px">${emptyText}</div>`;
+    cont.querySelectorAll(".trowc").forEach((b) => b.onclick = () => {
+      const r = rows.find((x) => x.symbol === b.dataset.s);
+      if (r) open(r);
+    });
+  };
+
+  if (isMobile()) {
+    mobList(root.querySelector("#an-listings"), by("listings"),
+      (r) => price(r.metrics.price),
+      (r) => `${hoursMinutes(r.metrics.hours_since)} после листинга · оборот ${usd(r.metrics.spot_turnover)}`,
+      "Новых листингов за последние 72 часа нет");
+    mobList(root.querySelector("#an-volatile"), by("volatile"),
+      (r) => `<b>${pct(r.metrics.vol6h, { sign: false })}</b>`,
+      (r) => `цена ${price(r.metrics.price)} · 24ч ${pct(r.metrics.change24h)} · оборот ${usd(r.metrics.spot_turnover)}`,
+      "Сейчас нет монет, прошедших фильтры");
+    mobList(root.querySelector("#an-spike"), by("spike"),
+      (r) => `<b>×${r.metrics.ratio}</b>`,
+      (r) => `цена ${price(r.metrics.price)} · оборот ${usd(r.metrics.turnover24h)} против ${usd(r.metrics.base_median)}`,
+      "Аномальных всплесков объёма не найдено");
+    return;
+  }
 
   // --- Новые листинги ---
   sortableTable(root.querySelector("#an-listings"), [

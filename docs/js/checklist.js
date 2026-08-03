@@ -163,6 +163,7 @@ function renderOne(list, modal) {
         </div>`;
       }).join("")}
     </div>
+    <div class="clfoot">
     <div class="clprogress">
       <div class="top">
         <div>
@@ -189,6 +190,7 @@ function renderOne(list, modal) {
         </div>
         <div class="vmath num">${verdict.math}</div>
       </div>
+    </div>
     </div>`
     : `<p class="muted" style="padding:14px 22px 18px">Пунктов пока нет — нажми «Редактировать» и добавь условия.</p>`}`;
 

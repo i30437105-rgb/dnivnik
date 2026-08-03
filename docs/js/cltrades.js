@@ -5,7 +5,8 @@ import {
   loadChecklists, loadChecklistTrades, createChecklistTrade, loadChecklistTradeFull,
   uploadChecklistShot, saveChecklistTradeResult, deleteChecklistTrade,
 } from "./api.js";
-import { esc, usd, fmtRu, fmtDay, fmtDT, todayLocal, addDays, notify, confirmToast, openModal, openLightbox } from "./util.js";
+import { esc, usd, fmtRu, fmtDay, fmtDT, todayLocal, addDays, notify, confirmToast, openModal } from "./util.js";
+import { renderGallery, openGallery } from "./gallery.js";
 
 let root;
 let anchor; // YYYY-MM календаря сделок
@@ -46,9 +47,11 @@ export function initClTrades(container) {
         </div>
       </div>
       <div id="ct-cal"><div class="loading">Загружаю…</div></div>
+      <button class="btn dashed" id="ct-new2" type="button">${IC.plus} Добавить сделку</button>
       <div class="muted small" style="margin-top:10px">Каждая сделка хранит снимок заполнения чек-листа со скриншотами и результат. Кликни по дню со сделками.</div>
     </section>`;
   root.querySelector("#ct-new").onclick = openNewTrade;
+  root.querySelector("#ct-new2").onclick = openNewTrade;
   root.querySelector("#ct-prev").onclick = () => { shiftMonth(-1); renderCal(); };
   root.querySelector("#ct-next").onclick = () => { shiftMonth(1); renderCal(); };
   renderCal().catch((e) => root.querySelector("#ct-cal").innerHTML = `<div class="warn">Ошибка: ${esc(e.message)}</div>`);
@@ -87,8 +90,9 @@ async function renderCal() {
     html += `<div class="cal-cell ct ${cls} ${ds === today ? "today" : ""} ${ds.startsWith(anchor) ? "" : "outside"}" data-day="${ds}">
       <div class="d">${Number(ds.slice(8))}</div>
       ${list.length ? `
-        ${withPnl.length ? `<div class="r">${usd(sum, { sign: true })}</div>` : ""}
+        ${withPnl.length ? `<div class="r">${usd(sum, { sign: true })}</div>` : `<div class="norz">без рез.</div>`}
         <div class="cnt">${tOf(list.length)}</div>
+        <span class="ctdots">${"<i></i>".repeat(Math.min(list.length, 5))}</span>
         <div class="ctnames">${brief}</div>` : ""}
     </div>`;
   }
@@ -150,22 +154,25 @@ function openTradeFill(list) {
     title: it.title, note: it.note ?? "", weight: it.weight,
     screenshot_mode: it.screenshot_mode ?? "none", answer: null, files: [],
   }));
+  // превью файлов: objectURL кэшируется, чтобы не пересоздавать на каждый draw
+  const urls = new Map();
+  const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
 
   const modal = openModal(`
     <h2>Сделка · ${esc(list.name)}</h2>
     <div id="tf-rows"></div>
-    <div class="clprogress" style="border:none;padding:14px 2px 4px"><div class="top">
-      <div><div class="lbl">Выполнение</div>
-        <div class="row" style="gap:10px;align-items:baseline"><span class="score num" id="tf-score"></span></div></div>
-      <div class="pct num" id="tf-pct"></div></div>
-      <div class="track"><div class="mark" style="left:${Math.min(Math.max(Number(list.threshold_pct), 0), 100)}%"></div>
-        <div class="fill idle" id="tf-fill" style="width:0%"></div></div></div>
-    <div class="clverdict" id="tf-verdict" style="margin:12px 0 0"></div>
-    <div class="ce-footer">
-      <span class="muted small" id="tf-hint"></span>
-      <div class="row" style="gap:8px">
+    <div class="tf-foot">
+      <div class="clprogress" style="border:none;padding:14px 2px 4px"><div class="top">
+        <div><div class="lbl">Выполнение</div>
+          <div class="row" style="gap:10px;align-items:baseline"><span class="score num" id="tf-score"></span></div></div>
+        <div class="pct num" id="tf-pct"></div></div>
+        <div class="track"><div class="mark" style="left:${Math.min(Math.max(Number(list.threshold_pct), 0), 100)}%"></div>
+          <div class="fill idle" id="tf-fill" style="width:0%"></div></div></div>
+      <div class="clverdict" id="tf-verdict" style="margin:12px 0 0"></div>
+      <div class="clwarn" id="tf-hint" hidden></div>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:12px">
         <button class="btn ghost" id="tf-cancel" type="button">Отмена</button>
-        <button class="btn primary" id="tf-save" type="button">Сохранить сделку</button>
+        <button class="btn primary" id="tf-save" type="button" style="flex:1;max-width:320px">Сохранить сделку</button>
       </div>
     </div>`, { wide: true });
 
@@ -194,9 +201,13 @@ function openTradeFill(list) {
       </div><div class="vmath num">${pct}% ${allowed ? "≥" : "<"} ${fmtRu(Number(list.threshold_pct), 0)}%</div>`;
     const save = modal.el.querySelector("#tf-save");
     save.disabled = !answered || !allowed || missing.length > 0;
-    modal.el.querySelector("#tf-hint").textContent = missing.length
-      ? `⚠ Приложи обязательные скриншоты: «${missing[0].title.slice(0, 40)}»${missing.length > 1 ? ` и ещё ${missing.length - 1}` : ""}`
-      : (!allowed && answered ? "Процент ниже порога — по правилам в сделку не входим." : "");
+    // disabled с причиной — жёлтая плашка над кнопкой (спека 1i), не улетающий тост
+    const hint = modal.el.querySelector("#tf-hint");
+    const why = [];
+    if (answered && !allowed) why.push(`набрать ${fmtRu(Number(list.threshold_pct), 0)}%`);
+    if (missing.length) why.push(`приложить скрин к пункту «${missing[0].title.slice(0, 40)}»${missing.length > 1 ? ` и ещё ${missing.length - 1}` : ""}`);
+    hint.hidden = !why.length;
+    hint.textContent = why.length ? `⚠ Чтобы сохранить: ${why.join(" и ")}.` : "";
   };
 
   const draw = () => {
@@ -210,14 +221,25 @@ function openTradeFill(list) {
           <div class="t">${esc(a.title)}</div>
           ${a.note ? `<div class="hint">${esc(a.note)}</div>` : ""}
           ${a.screenshot_mode !== "none" ? `
-            <div class="row" style="gap:8px;margin-top:8px">
-              <button class="btn small ghost tf-attach" data-i="${i}" type="button">${IC.clip} Скриншот${a.screenshot_mode === "required" ? ' <span class="tag red">обязателен при «да»</span>' : ""}</button>
-              ${a.files.map((f, k) => `<span class="tag green">📷 ${esc(f.name.length > 18 ? f.name.slice(0, 15) + "…" : f.name)}
-                <a class="tf-rmfile" data-i="${i}" data-k="${k}" style="cursor:pointer;margin-left:4px">✕</a></span>`).join("")}
-            </div>` : ""}
+            <div class="gal tfgal" data-i="${i}" style="margin-top:10px">
+              ${a.files.map((f, k) => `<span class="gal-tile" data-k="${k}">
+                <img src="${urlOf(f)}" alt="${esc(f.name)}">
+                <span class="gal-rm tf-rmfile" data-i="${i}" data-k="${k}" title="Убрать">${IC.no}</span>
+              </span>`).join("")}
+              <button class="gal-add tf-attach" data-i="${i}" type="button">${IC.clip}
+                <span>Скриншот${a.screenshot_mode === "required" ? " *" : ""}</span></button>
+            </div>
+            ${a.screenshot_mode === "required" ? `<div class="muted small" style="margin-top:5px">* скрин обязателен при ответе «да»</div>` : ""}` : ""}
         </div>
         <span class="wtag ${WEIGHT_TAG[a.weight]}">${WEIGHT_LABEL[a.weight]}</span>
       </div>`).join("");
+
+    // тап по превью — крупно (со всеми файлами пункта)
+    rowsEl.querySelectorAll(".tfgal .gal-tile").forEach((t) => t.onclick = (e) => {
+      if (e.target.closest(".tf-rmfile")) return;
+      const i = Number(t.closest(".tfgal").dataset.i);
+      openGallery(answers[i].files.map((f) => ({ url: urlOf(f), caption: answers[i].title })), Number(t.dataset.k));
+    });
 
     rowsEl.querySelectorAll(".ynb").forEach((b) => b.onclick = () => {
       const i = Number(b.dataset.i), v = b.dataset.v;
@@ -285,6 +307,16 @@ async function openTradeView(id) {
   for (const s of shots) (s.answer_id ? (byAnswer[s.answer_id] ??= []) : resultShots).push(s);
   let resultFiles = [];
 
+  // сквозная галерея: все скрины сделки листаются свайпом, подпись = пункт чек-листа (спека 1c)
+  const allItems = [];
+  const offsets = {}; // answer_id -> индекс первого скрина в общей ленте
+  for (const a of answers) {
+    offsets[a.id] = allItems.length;
+    for (const s of byAnswer[a.id] ?? []) allItems.push({ url: s.url ?? "", caption: a.title, sub: `пункт чек-листа «${trade.checklist_name}»` });
+  }
+  const resultOffset = allItems.length;
+  for (const s of resultShots) allItems.push({ url: s.url ?? "", caption: "Результат сделки", sub: trade.checklist_name });
+
   const modal = openModal(`
     <h2>${esc(trade.checklist_name)} · ${fmtDay(trade.day)}</h2>
     <div class="row" style="gap:8px;margin-bottom:14px">
@@ -301,9 +333,7 @@ async function openTradeView(id) {
             ${a.answer === "y" ? IC.yes : a.answer === "n" ? IC.no : "—"}</span></div>
           <div style="flex:1;min-width:0">
             <div class="t">${esc(a.title)}</div>
-            ${(byAnswer[a.id] ?? []).length ? `<div class="row" style="gap:8px;margin-top:8px">
-              ${byAnswer[a.id].map((s) => `<span class="att zoom" data-url="${esc(s.url ?? "")}"><img src="${esc(s.url ?? "")}" alt="скрин"></span>`).join("")}
-            </div>` : ""}
+            ${(byAnswer[a.id] ?? []).length ? `<div class="gal tv-gal" data-aid="${a.id}" style="margin-top:10px"></div>` : ""}
           </div>
           <span class="wtag ${WEIGHT_TAG[a.weight]}">${WEIGHT_LABEL[a.weight]}</span>
         </div>`).join("")}
@@ -316,17 +346,27 @@ async function openTradeView(id) {
         <label style="flex:1;min-width:200px">Вывод по сделке
           <textarea id="tv-text" rows="2" placeholder="Что получилось, что нарушил, что улучшить…">${esc(trade.result_text ?? "")}</textarea></label>
       </div>
+      ${resultShots.length ? `<div class="gal" id="tv-rgal"></div>` : ""}
       <div class="row" style="gap:8px">
         <button class="btn small ghost" id="tv-attach" type="button">${IC.clip} Скриншот результата</button>
         <span id="tv-files" class="row" style="gap:8px"></span>
-        ${resultShots.map((s) => `<span class="att zoom" data-url="${esc(s.url ?? "")}"><img src="${esc(s.url ?? "")}" alt="скрин"></span>`).join("")}
       </div>
       <div class="ce-footer"><span></span>
         <button class="btn primary" id="tv-save" type="button">Сохранить результат</button></div>
     </div>`, { wide: true });
 
-  // клик по скриншоту — крупный просмотр поверх модалки
-  modal.el.querySelectorAll(".att.zoom").forEach((el) => el.onclick = () => openLightbox(el.dataset.url));
+  // галереи: тап открывает лайтбокс со сквозной листалкой по всем скринам сделки
+  modal.el.querySelectorAll(".tv-gal").forEach((el) => {
+    const aid = el.dataset.aid;
+    const local = (byAnswer[aid] ?? []).map((s, k) => ({ url: s.url ?? "", i: k }));
+    renderGallery(el, local.map((x) => allItems[offsets[aid] + x.i]), {
+      onOpen: (k) => openGallery(allItems, offsets[aid] + k),
+    });
+  });
+  const rgal = modal.el.querySelector("#tv-rgal");
+  if (rgal) renderGallery(rgal, resultShots.map((_, k) => allItems[resultOffset + k]), {
+    onOpen: (k) => openGallery(allItems, resultOffset + k),
+  });
 
   modal.el.querySelector("#tv-attach").onclick = () => {
     const inp = document.createElement("input");

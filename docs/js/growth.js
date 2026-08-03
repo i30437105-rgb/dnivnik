@@ -1,7 +1,7 @@
 // Калькулятор прироста депозита со сложным процентом и кубышкой (вкладка модалки «Калькулятор»).
 // Механика (утверждена Иваном): прирост месяца = тело × %/мес; из прироста заданный %
 // уходит в кубышку; следующий месяц растёт от тела УЖЕ без отчислений; кубышка просто копится.
-import { esc, fmtRu } from "./util.js";
+import { esc, fmtRu, isMobile } from "./util.js";
 import { num, money } from "./calc.js";
 
 const KEY = "clgrowth";
@@ -28,9 +28,15 @@ export function renderGrowth(root) {
           <label>Прирост в месяц, %
             <input id="cg-growth" type="number" min="0" step="1" inputmode="decimal" value="${esc(st.growth)}"></label>
           <label>В кубышку от прироста, %
-            <input id="cg-vault" type="number" min="0" max="100" step="5" inputmode="decimal" value="${esc(st.vault)}"></label>
+            <span class="cg-presets" data-for="cg-vault">
+              ${[10, 25, 50].map((v) => `<button type="button" class="pre" data-v="${v}">${v}%</button>`).join("")}
+              <input id="cg-vault" type="number" min="0" max="100" step="5" inputmode="decimal" value="${esc(st.vault)}">
+            </span></label>
           <label>Период, месяцев
-            <input id="cg-months" type="number" min="1" max="${MAX_MONTHS}" step="1" inputmode="numeric" value="${esc(st.months)}"></label>
+            <span class="cg-presets" data-for="cg-months">
+              ${[6, 12, 24, 36].map((v) => `<button type="button" class="pre" data-v="${v}">${v}</button>`).join("")}
+              <input id="cg-months" type="number" min="1" max="${MAX_MONTHS}" step="1" inputmode="numeric" value="${esc(st.months)}">
+            </span></label>
         </div>
       </div>
       <div class="calc-out" id="cg-out"></div>
@@ -83,8 +89,23 @@ export function renderGrowth(root) {
         <span class="muted">результат идеализирован: ровный процент каждый месяц, без просадок</span>
       </div>`;
 
-    tbl.innerHTML = `
-      <table class="tbl mini cg-tbl">
+    // Мобила (спека 2c): карточка месяца вместо таблицы 6 колонок — без горизонтального скролла
+    tbl.innerHTML = isMobile()
+      ? `<div class="cg-cap">По месяцам <span class="muted num">${months}</span></div>
+        <div class="cg-cards">${rows.map((r) => `
+          <div class="cg-mrow">
+            <div class="top">
+              <span class="l"><span class="mn num">${r.m}</span>
+                <span class="from num">${money(r.startDepo)} → </span>
+                <b class="num">${money(r.depo)}</b></span>
+              <span class="gain num">+${money(r.gain)}</span>
+            </div>
+            ${r.toVault > 0 ? `<div class="bot">
+              <span>в кубышку <span class="num">${money(r.toVault)}</span></span>
+              <span>кубышка всего <span class="num">${money(r.vault)}</span></span>
+            </div>` : ""}
+          </div>`).join("")}</div>`
+      : `<table class="tbl mini cg-tbl">
         <thead><tr><th>Мес.</th><th>Тело на старте</th><th>Прирост</th><th>В кубышку</th><th>Тело на конец</th><th>Кубышка всего</th></tr></thead>
         <tbody>${rows.map((r) => `
           <tr><td class="num">${r.m}</td>
@@ -95,8 +116,19 @@ export function renderGrowth(root) {
           <td class="num">${money(r.vault)}</td></tr>`).join("")}
         </tbody>
       </table>`;
+
+    // подсветка активного пресета
+    root.querySelectorAll(".cg-presets").forEach((p) => {
+      const cur = String(num(p.querySelector("input")));
+      p.querySelectorAll(".pre").forEach((b) => b.classList.toggle("on", b.dataset.v === cur));
+    });
   };
 
   fields.forEach((k) => root.querySelector(`#cg-${k}`).oninput = recalc);
+  root.querySelectorAll(".cg-presets .pre").forEach((b) => b.onclick = () => {
+    const inp = b.closest(".cg-presets").querySelector("input");
+    inp.value = b.dataset.v;
+    recalc();
+  });
   recalc();
 }

@@ -249,6 +249,24 @@ details.block[open] > summary { margin-bottom: 4px; }
   border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-2);
   color: var(--text-2); cursor: pointer; font-size: 15px; }
 .modal-close:hover { background: var(--bg-3); }
+.modal-grip { display: none; }
+
+/* Мобильный лист (спека handoff): снизу, ручка, фиксированная шапка-крестик, один скролл */
+@media (max-width: 700px) {
+  .modal-back { padding: 0; align-items: flex-end; overflow: hidden; }
+  .modal { border-radius: 18px 18px 0 0; border-bottom: none; max-height: 96dvh;
+    display: flex; flex-direction: column; overflow: hidden; }
+  .modal-grip { display: block; flex: 0 0 auto; width: 40px; height: 4px; border-radius: 3px;
+    background: #3a332b; margin: 8px auto 0; }
+  .modal-body { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 0;
+    padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); }
+  .modal-close { top: 10px; right: 10px; width: 44px; height: 44px; z-index: 2; }
+  /* главное действие прилипает к низу листа */
+  .modal .ce-footer, .modal .tf-foot, .modal .rf-footer {
+    position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); z-index: 2;
+    background: var(--bg-1); margin: 0 -14px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border); }
+}
 
 /* ---------- Тосты ---------- */
 .toast-wrap { position: fixed; left: 0; right: 0; bottom: 28px; display: flex;
@@ -280,28 +298,51 @@ details.block[open] > summary { margin-bottom: 4px; }
   .grid2, .grid3 { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
-  /* Навигация: сайдбар превращается в нижний таб-бар */
+  /* Навигация: нижний таб-бар (спека 1a): 62px, вся ячейка — тач-зона,
+     активная = иконка --accent-text + рисочка 14×2 под ней, «Выход» приглушён */
   .layout { flex-direction: column; }
   .side { position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: auto;
-    flex: none; flex-direction: row; justify-content: space-around; align-items: center;
-    padding: 5px 6px calc(5px + env(safe-area-inset-bottom)); gap: 0;
+    flex: none; flex-direction: row; align-items: stretch;
+    padding: 0 4px env(safe-area-inset-bottom); gap: 0;
     border-right: none; border-top: 1px solid var(--chart-grid); }
   .side .logo, .side .spacer { display: none; }
-  .side .tab, .side-btn { width: 44px; height: 44px; }
-  .side .tab.on::before { left: 50%; top: auto; bottom: -6px; width: 20px; height: 3px;
-    border-radius: 3px 3px 0 0; transform: translateX(-50%); }
+  .side .tab, .side-btn { flex: 1 1 0; width: auto; height: 62px; border-radius: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .side .tab::after, .side-btn::after { content: ""; width: 14px; height: 2px; border-radius: 2px;
+    background: transparent; }
+  .side .tab.on { background: none; color: var(--accent-text); }
+  .side .tab.on::after { background: var(--accent); }
+  .side .tab.on::before { display: none; }
+  .side .tab.on svg { stroke-width: 1.9; }
+  .side .tab:hover, .side-btn:hover { background: none; }
+  .side-btn { color: var(--text-dim); }
   .content { width: 100%; }
-  .tabpane { padding: 14px 12px calc(86px + env(safe-area-inset-bottom)); }
+  .tabpane { padding: 14px 12px calc(78px + env(safe-area-inset-bottom)); }
 
   /* iOS зумит страницу при фокусе поля, если шрифт < 16px — и не отзумливает обратно */
   input, select, textarea { font-size: 16px; }
 
-  /* Сетки и карточки */
+  /* Сетки и карточки (спека 1d): не-hero карточки — компактные строки «текст слева, сумма справа» */
   .cards, .form { grid-template-columns: 1fr; }
+  .cards { gap: 8px; }
+  .cards .card:not(.hero) { display: grid; grid-template-columns: 1fr auto; gap: 1px 14px;
+    align-items: center; padding: 13px 14px; }
+  .cards .card:not(.hero) .k { grid-column: 1; margin-bottom: 0; }
+  .cards .card:not(.hero) .v { grid-column: 2; grid-row: 1 / span 2; font-size: 19px; text-align: right; }
+  .cards .card:not(.hero) .small { grid-column: 1; }
+  .card.hero .v { font-size: 32px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
-  .card .v { font-size: 22px; }
-  .card.hero .v { font-size: 26px; }
   .block { padding: 13px 12px; }
+
+  /* Hero: раскладка результата дня — строками (десктопная строка скрыта) */
+  .only-mob { display: block; }
+  .only-desk { display: none; }
+  .hero-break { display: flex; flex-direction: column; gap: 4px; margin-top: 11px;
+    padding-top: 11px; border-top: 1px solid var(--border-hair); }
+  .hero-break > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .hero-break .hk { color: var(--text-muted); }
+  .hero-break .hv { color: var(--text-2); }
+  .hero-break .dim .hv { color: var(--text-dim); }
 
   /* Шапка страницы */
   .pagehead { flex-direction: column; align-items: stretch; gap: 12px; }
@@ -309,34 +350,163 @@ details.block[open] > summary { margin-bottom: 4px; }
   .pagehead .right { width: 100%; justify-content: space-between; }
   .status { align-items: flex-start; text-align: left; }
   .seg { flex-wrap: wrap; }
+  .seg .btn { border-radius: var(--r-full); padding: 8px 13px; height: auto; }
   .plabel { min-width: 0; }
 
-  /* Календари */
-  .cal-head { gap: 4px; }
-  .cal-grid { gap: 4px; }
-  .cal-cell, .cal-cell.rf { min-height: 54px; padding: 5px 6px; border-radius: 8px; }
-  .cal-cell .r { font-size: 10.5px; }
-  .cal-cell .rp, .cal-cell .cnt { display: none; }
-  .cal-cell .ric { top: 5px; right: 5px; }
-  .cal-cell .ric svg { width: 11px; height: 11px; }
+  /* Календари (спека 1d): квадратная ячейка, число + иконка + цвет; суммы — в листе дня */
+  .cal-head { gap: 3px; }
+  .cal-grid { gap: 3px; }
+  .cal-cell, .cal-cell.rf { min-height: 0; aspect-ratio: 1; padding: 0; border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .cal-cell .d { font-size: 12px; }
+  .cal-cell .r, .cal-cell .rp, .cal-cell .cnt { display: none; }
+  .cal-cell .ric { position: static; }
+  .cal-cell .ric svg { width: 13px; height: 13px; }
+  .cal-cell.nodata, .cal-cell.zero { justify-content: flex-start; padding-top: 6px; }
   .weekrow .wk { min-width: 0; width: 100%; }
 
-  /* Модалки и тосты */
-  .modal-back { padding: 10px 8px 24px; }
-  .modal-body { padding: 16px 14px; }
-  .modal-body > h2 { font-size: 16px; }
+  /* Тосты — над таб-баром */
   .toast-wrap { padding: 0 10px; bottom: calc(76px + env(safe-area-inset-bottom)); }
   .toast { max-width: 100%; flex-wrap: wrap; }
   .toast .row { margin-left: 0; }
 
-  /* Карточка сделки, скриншоты */
-  .att img { max-width: 128px; max-height: 88px; }
+  /* Статистика (спека 1d): 4 главные метрики + «Ещё N», разбивки — чипами */
+  .stats.collapsed .stat.extra { display: none; }
+  .bd-chips { display: flex; gap: 6px; margin: 12px 0 4px; }
+  .grid3 { display: block; }
+  .grid3 > div { display: none; }
+  .grid3 > div.on { display: block; }
+  .grid3 > div.on > h3 { display: none; }
+
+  /* Сделки за период — карточные строки (таблица скрыта JS-ом) */
+
+  /* Карточка сделки (спека 1f): скрины → заметки → исполнения */
+  .grid2 { display: flex; flex-direction: column; }
+  .tc-execs { order: 2; }
 
   /* Чек-лист: бейдж веса переезжает под формулировку (текст не сжимается в столбик) */
   .clitem { flex-wrap: wrap; }
   .clitem > div:not(.yn) { min-width: 62% !important; }
   .clitem .wtag { order: 3; margin-left: 47px; margin-top: -2px; }
+  .ynb { width: 44px; height: 38px; }
+
+  /* Чипы чек-листов — горизонтальный скролл с затуханием у края (спека 1g) */
+  .cltabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; padding-bottom: 2px;
+    mask-image: linear-gradient(90deg, #000 92%, transparent); }
+  .cltabs::-webkit-scrollbar { display: none; }
+  .cltab { flex: 0 0 auto; padding: 12px 16px; }
+
+  /* Кнопки шапки чек-листа — во всю ширину, 48px (спека 1g) */
+  #cl-calc, #cl-new { flex: 1; height: 48px; justify-content: center; }
+
+  /* Календарь сделок (спека 1g): сумма + точки; названия чек-листов — в листе дня */
+  .cal-cell.ct .r { display: block; font-size: 10.5px; }
+  .cal-cell.ct .norz { display: block; font-size: 10px; font-weight: 600; color: var(--accent-text); }
+  .cal-cell.ct .ctnames { display: none; }
+  .cal-cell .ctdots { display: flex; gap: 2px; }
+  .cal-cell .ctdots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+  .cal-cell.ct.pos .ctdots { color: var(--pos); }
+  .cal-cell.ct.neg .ctdots { color: var(--neg); }
+  .cal-cell.ct.hasct .ctdots, .cal-cell.ct.zero .ctdots { color: var(--accent-text); }
+  #ct-new { display: none; }
+  .block #ct-new2 { display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 52px; margin-top: 10px; font-size: 14px; border-radius: 12px; }
+
+  /* Липкий низ листов чек-листа (спека 1h/1i): вердикт виден без доскролла */
+  .modal .clfoot, .modal .tf-foot { position: sticky; z-index: 2;
+    bottom: calc(-18px - env(safe-area-inset-bottom)); background: var(--bg-1);
+    margin: 0 -14px; padding: 0 14px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border); box-shadow: 0 -12px 26px rgba(19, 17, 16, .55); }
+  .clcard.inmodal .clhead { padding-right: 0; }
+  .clcard.inmodal .clhead .row:last-child { width: 100%; }
+  .clcard.inmodal .clhead .btn.ghost { flex: 1; height: 44px; }
+  .clcard.inmodal .clhead .btn.ghost.icon { flex: 0 0 44px; }
 }
+
+/* Десктоп: мобильные элементы скрыты */
+.only-mob, .stats-more, .bd-chips, .wnav { display: none; }
+
+/* Чип общего вида (оглавление волн, категории рефлексии) */
+.chip { background: var(--bg-2); border: 1px solid var(--border-soft); color: var(--text-muted);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 14px;
+  border-radius: var(--r-full); cursor: pointer; white-space: nowrap; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+@media (max-width: 700px) {
+  /* мобильные утилиты — этот блок ниже глобального display:none и перебивает его */
+  .only-mob { display: block; }
+  .only-desk { display: none; }
+  .bd-chips { display: flex; }
+
+  /* Волны (спека 2f): липкое оглавление */
+  .wnav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    position: sticky; top: 0; z-index: 10; background: var(--bg-0, #131110);
+    padding: 8px 0 10px; margin: -6px 0 8px; }
+  .wnav::-webkit-scrollbar { display: none; }
+
+  /* Рефлексия (спека 2g): ряд эмодзи-чипов вместо селекта */
+  .rf-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .rf-chips .chip { min-width: 44px; min-height: 40px; padding: 6px 10px; font-size: 16px; }
+
+  /* Настройки (спека 2i): кнопка сохранения всегда под рукой */
+  .toolbar { position: sticky; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 5;
+    background: var(--bg-0, #131110); padding: 10px 0; }
+
+  /* Вход (спека 2j) */
+  .login { margin: 9vh auto; }
+  .login .btn { width: 100%; height: 50px; }
+}
+
+/* Загрузка-скелет (спека 2k): пульс вместо прыгающего текста */
+.loading { color: var(--text-dim); padding: 18px 6px; animation: skel 1.4s ease-in-out infinite; }
+@keyframes skel { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (max-width: 700px) {
+  .stats-more { display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; margin-top: 9px; background: transparent; border: 1px solid var(--border-soft);
+    color: var(--text-muted); font-family: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 12px; border-radius: 10px; cursor: pointer; }
+}
+
+/* Карточные строки сделок (спека 1d/1e) — используются на мобиле вместо таблицы */
+.trlist { display: flex; flex-direction: column; gap: 7px; }
+.trowc { background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: 12px;
+  padding: 12px 13px; display: flex; align-items: center; gap: 12px; width: 100%;
+  font-family: inherit; color: var(--text); cursor: pointer; text-align: left; }
+.trowc .sym { font-size: 13.5px; font-weight: 700; }
+.trowc .bdg { font-size: 10.5px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+.trowc .bdg.long { color: var(--pos); background: var(--pos-dim); }
+.trowc .bdg.short { color: var(--neg); background: rgba(240, 85, 63, .14); }
+.trowc .meta { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; }
+.trowc .marks { display: flex; gap: 8px; margin-top: 7px; color: #4a4238; font-size: 11px; }
+.trowc .pnl { font-size: 19px; font-weight: 700; line-height: 1; text-align: right; }
+.trowc .pp { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; }
+.trowc .chev { color: #3a332b; flex: 0 0 auto; }
+
+/* Исполнения карточными строками (спека 1f) */
+.execrows { display: flex; flex-direction: column; }
+.execrow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 10px 4px; border-bottom: 1px solid var(--border-hair); font-size: 12.5px; }
+.execrow .sub2 { font-size: 11.5px; color: var(--text-dim); margin-top: 3px; }
+
+/* Жёлтая плашка-причина (спека 1i): почему кнопка недоступна */
+.clwarn { display: flex; gap: 9px; background: rgba(224, 168, 58, .1);
+  border: 1px solid rgba(224, 168, 58, .3); border-radius: 11px; padding: 12px 13px;
+  margin-top: 11px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.clwarn::before { content: "⚠"; color: #e0a83a; flex: 0 0 auto; }
+.clwarn[hidden] { display: none; }
+
+/* Дашед-плитка «добавить скриншот» в сетке галереи (спека 1i) */
+.gal-add { aspect-ratio: 16/10; border-radius: 10px; background: var(--bg-inset);
+  border: 1px dashed #322c25; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 5px; color: var(--text-muted); font-family: inherit;
+  font-size: 11px; font-weight: 600; cursor: pointer; }
+.gal-add:hover { border-color: #3a332b; color: var(--text-2); }
+
+/* Точки числа сделок в календаре чек-листа (спека 1g) — только мобила */
+.ctdots { display: none; }
+#ct-new2 { display: none; }
+.cal-cell .norz { display: none; }
 
 /* ---------- Чек-листы (дизайн: handoff/Чек-лист.dc.html) ---------- */
 /* Чипы чек-листов */
@@ -542,6 +712,27 @@ details.block[open] > summary { margin-bottom: 4px; }
 .calc-row.pos .move { color: var(--pos); }
 .calc-warn { padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.45;
   background: rgba(240, 85, 63, .11); border: 1px solid var(--neg-bd); color: var(--neg); }
+
+/* Чипы-пресеты калькулятора прироста (спека 2c) */
+.cg-presets { display: flex; gap: 6px; }
+.cg-presets .pre { flex: 1; height: 44px; border-radius: 10px; background: var(--bg-2);
+  border: 1px solid var(--border-soft); color: var(--text-muted); font-family: var(--font-mono);
+  font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.cg-presets .pre.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cg-presets input { flex: 1; min-width: 0; text-align: center; }
+.cg-cap { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 9px; display: flex; justify-content: space-between; }
+.cg-cards { display: flex; flex-direction: column; gap: 6px; }
+.cg-mrow { background: var(--bg-inset); border: 1px solid var(--border-hair); border-radius: 11px;
+  padding: 12px 13px; }
+.cg-mrow .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cg-mrow .l { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.cg-mrow .mn { width: 24px; height: 24px; border-radius: 7px; background: var(--bg-2);
+  display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700; }
+.cg-mrow .from { font-size: 12px; color: var(--text-dim); }
+.cg-mrow .gain { font-size: 13px; font-weight: 600; color: var(--pos); flex: 0 0 auto; }
+.cg-mrow .bot { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px;
+  color: var(--text-muted); padding-top: 8px; margin-top: 9px; border-top: 1px solid var(--border-hair); }
 .calc-foot { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px;
   color: var(--text-muted); padding-top: 3px; }
 @media (max-width: 760px) {
@@ -556,3 +747,45 @@ details.block[open] > summary { margin-bottom: 4px; }
   border: 1px solid var(--border); box-shadow: var(--shadow-modal); cursor: default; }
 .lightbox .modal-close { position: fixed; top: 16px; right: 18px; z-index: 81; }
 .att .zoom, .att.zoom { cursor: zoom-in; display: inline-block; line-height: 0; }
+
+/* Галерея скриншотов (спека 1b): сетка 16:10, бейдж «+N», крестик удаления */
+.gal { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.gal.one { grid-template-columns: 1fr; }
+.gal-tile { position: relative; aspect-ratio: 16/10; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border-soft); background: #1c1814; padding: 0; cursor: zoom-in;
+  font-family: inherit; }
+.gal-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gal-tile .gal-err { display: none; position: absolute; inset: 0; align-items: center;
+  justify-content: center; font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.4; }
+.gal-tile.err img { display: none; }
+.gal-tile.err .gal-err { display: flex; }
+.gal-more { position: absolute; inset: 0; background: rgba(8, 7, 6, .62); display: flex;
+  align-items: center; justify-content: center; font-size: 17px; font-weight: 700; color: var(--text); }
+.gal-rm { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(8, 7, 6, .78); border: 1px solid #3a332b; display: flex; align-items: center;
+  justify-content: center; color: var(--text); cursor: pointer; }
+
+/* Лайтбокс-галерея (спека 1c): непрозрачный фон, счётчик, точки, подпись */
+.lightbox.glb { flex-direction: column; align-items: stretch; padding: 0; background: #0b0a09;
+  cursor: default; }
+.glb-top { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px; }
+.glb-count { font-size: 14px; font-weight: 600; color: var(--text);
+  background: rgba(34, 30, 24, .9); padding: 6px 12px; border-radius: var(--r-full); }
+.glb-close { width: 44px; height: 44px; border-radius: 50%; background: rgba(34, 30, 24, .9);
+  border: none; color: var(--text); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; }
+.glb-stage { flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 0 6px; min-height: 0; }
+.glb-stage img { max-width: 100%; max-height: 100%; border-radius: 12px;
+  border: 1px solid var(--border-soft); user-select: none; -webkit-user-drag: none;
+  transition: transform .18s ease-out; }
+.glb-stage img.zoomed { transform: scale(2.4); cursor: zoom-out; }
+.glb-cap { flex: 0 0 auto; padding: 16px 20px 0; text-align: center; }
+.glb-cap .t { font-size: 13px; font-weight: 600; }
+.glb-cap .s { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.glb-dots { flex: 0 0 auto; display: flex; justify-content: center; gap: 7px;
+  padding: 20px 0 calc(30px + env(safe-area-inset-bottom)); }
+.glb-dots span { width: 6px; height: 6px; border-radius: 50%; background: #3a332b; }
+.glb-dots span.on { width: 18px; border-radius: var(--r-full); background: var(--accent-text); }
+body.lightbox-open .side { display: none; }

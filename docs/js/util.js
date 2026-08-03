@@ -5,6 +5,9 @@ export const state = {
   settings: null,
 };
 
+// Мобильный вьюпорт (брейкпоинт совпадает с CSS)
+export const isMobile = () => window.matchMedia("(max-width: 700px)").matches;
+
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -229,11 +232,36 @@ export function openModal(html, { wide = false } = {}) {
   const back = document.createElement("div");
   back.className = "modal-back";
   back.innerHTML = `<div class="modal ${wide ? "wide" : ""}">
+    <span class="modal-grip" aria-hidden="true"></span>
     <button class="modal-close" title="Закрыть">✕</button>
     <div class="modal-body">${html}</div></div>`;
   document.body.appendChild(back);
   const close = () => back.remove();
   back.querySelector(".modal-close").onclick = close;
   back.addEventListener("click", (e) => { if (e.target === back) close(); });
+
+  // Мобильный лист: свайп вниз за верхнюю зону (ручку) закрывает (спека handoff)
+  const sheet = back.querySelector(".modal");
+  let sy = null;
+  sheet.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    const top = sheet.getBoundingClientRect().top;
+    sy = t.clientY - top < 46 ? t.clientY : null; // только за шапку/ручку
+    if (sy != null) sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (sy == null) return;
+    const dy = Math.max(e.touches[0].clientY - sy, 0);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  sheet.addEventListener("touchend", (e) => {
+    if (sy == null) return;
+    const dy = e.changedTouches[0].clientY - sy;
+    sheet.style.transition = "transform .18s ease-out";
+    if (dy > 120) close();
+    else sheet.style.transform = "";
+    sy = null;
+  }, { passive: true });
+
   return { el: back.querySelector(".modal-body"), close };
 }

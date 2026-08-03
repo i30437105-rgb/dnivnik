@@ -1,19 +1,25 @@
-// Подробная карточка сделки (ТЗ 5.7): исполнения + редактируемые поля
+// Подробная карточка сделки (ТЗ 5.7): исполнения + редактируемые поля.
+// Мобила (спека 1f): порядок скрины → заметки → исполнения; исполнения — строками, скрины — галереей.
 import {
   loadExecutionsWindow, saveTradeNote, uploadAttachment, loadAttachments, deleteAttachment,
 } from "./api.js";
-import { esc, usd, price, fmtRu, fmtDT, sortableTable, notify, confirmToast, openLightbox } from "./util.js";
+import { esc, usd, price, fmtRu, fmtDT, fmtTime, sortableTable, notify, confirmToast, isMobile } from "./util.js";
+import { renderGallery } from "./gallery.js";
 
 export async function renderTradeCard(holder, trade, strategies) {
   const note = trade.trade_notes ?? {};
   holder.innerHTML = `
     <div class="grid2">
-      <div>
+      <div class="tc-execs">
         <h3>Исполнения</h3>
         <div class="muted small">Частичные входы и выходы — отдельными строками. ID Bybit: ${esc(trade.id)}</div>
         <div class="execs tblwrap"><div class="muted">Загружаю…</div></div>
       </div>
-      <div>
+      <div class="tc-notes">
+        <h3>Скриншоты</h3>
+        <div class="atts"></div>
+        <label class="btn small" style="margin-top:8px">+ Добавить (PNG/JPG/WebP, до 10 МБ)
+          <input type="file" class="n-file" accept="image/png,image/jpeg,image/webp" hidden multiple></label>
         <h3>Мои заметки</h3>
         <label>Комментарий<br><textarea class="n-comment" rows="3" placeholder="Почему вошёл, что увидел...">${esc(note.comment ?? "")}</textarea></label>
         <label>Состояние (теги через запятую)<br>
@@ -25,10 +31,6 @@ export async function renderTradeCard(holder, trade, strategies) {
         </select></label>
         <button class="btn primary n-save">Сохранить заметки</button>
         <span class="n-saved muted small"></span>
-        <h3>Скриншоты</h3>
-        <div class="atts"></div>
-        <label class="btn small">+ Добавить (PNG/JPG/WebP, до 10 МБ)
-          <input type="file" class="n-file" accept="image/png,image/jpeg,image/webp" hidden multiple></label>
       </div>
     </div>`;
 
@@ -38,17 +40,35 @@ export async function renderTradeCard(holder, trade, strategies) {
     const from = new Date(new Date(trade.opened_at ?? anchor).getTime() - 3600_000).toISOString();
     const to = new Date(new Date(anchor).getTime() + 3600_000).toISOString();
     const execs = await loadExecutionsWindow(trade.symbol, from, to);
-    sortableTable(holder.querySelector(".execs"), [
-      { key: "t", label: "Время", type: "str", get: (e) => e.exec_time, render: (e) => fmtDT(e.exec_time) },
-      { key: "side", label: "Сторона", type: "str", get: (e) => e.side,
-        render: (e) => `<span class="${e.side === "Buy" ? "green" : "red"}">${e.side === "Buy" ? "Покупка" : "Продажа"}</span>` },
-      { key: "type", label: "Тип ордера", type: "str", get: (e) => e.order_type ?? "—" },
-      { key: "price", label: "Цена", type: "num", get: (e) => e.price, render: (e) => price(e.price) },
-      { key: "qty", label: "Кол-во", type: "num", get: (e) => e.qty, render: (e) => fmtRu(e.qty, 4) },
-      { key: "fee", label: "Комиссия", type: "num", get: (e) => e.fee, render: (e) => e.fee != null ? usd(e.fee) : "—" },
-      { key: "mk", label: "Maker/Taker", type: "str", get: (e) => e.is_maker,
-        render: (e) => e.is_maker == null ? "—" : e.is_maker ? "maker" : "taker" },
-    ], execs, { emptyText: "Исполнения не найдены (могли не загрузиться при синке)" });
+    const box = holder.querySelector(".execs");
+    if (isMobile()) {
+      // строки «сторона · время · цена × кол-во · комиссия» — без горизонтального скролла (спека 1f)
+      box.innerHTML = execs.length ? `<div class="execrows">${execs.map((e) => `
+        <div class="execrow">
+          <div>
+            <span class="${e.side === "Buy" ? "green" : "red"}">${e.side === "Buy" ? "Покупка" : "Продажа"}</span>
+            <span class="muted num"> · ${fmtTime(e.exec_time)}</span>
+            <div class="sub2 num">${e.order_type ?? ""}${e.is_maker != null ? ` · ${e.is_maker ? "maker" : "taker"}` : ""}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="num">${price(e.price)} × ${fmtRu(e.qty, 4)}</span>
+            <div class="sub2 num">${e.fee != null ? `комиссия ${usd(e.fee)}` : ""}</div>
+          </div>
+        </div>`).join("")}</div>`
+        : `<div class="muted small">Исполнения не найдены (могли не загрузиться при синке)</div>`;
+    } else {
+      sortableTable(box, [
+        { key: "t", label: "Время", type: "str", get: (e) => e.exec_time, render: (e) => fmtDT(e.exec_time) },
+        { key: "side", label: "Сторона", type: "str", get: (e) => e.side,
+          render: (e) => `<span class="${e.side === "Buy" ? "green" : "red"}">${e.side === "Buy" ? "Покупка" : "Продажа"}</span>` },
+        { key: "type", label: "Тип ордера", type: "str", get: (e) => e.order_type ?? "—" },
+        { key: "price", label: "Цена", type: "num", get: (e) => e.price, render: (e) => price(e.price) },
+        { key: "qty", label: "Кол-во", type: "num", get: (e) => e.qty, render: (e) => fmtRu(e.qty, 4) },
+        { key: "fee", label: "Комиссия", type: "num", get: (e) => e.fee, render: (e) => e.fee != null ? usd(e.fee) : "—" },
+        { key: "mk", label: "Maker/Taker", type: "str", get: (e) => e.is_maker,
+          render: (e) => e.is_maker == null ? "—" : e.is_maker ? "maker" : "taker" },
+      ], execs, { emptyText: "Исполнения не найдены (могли не загрузиться при синке)" });
+    }
   } catch (e) {
     holder.querySelector(".execs").innerHTML = `<div class="warn">${esc(e.message)}</div>`;
   }
@@ -65,21 +85,17 @@ export async function renderTradeCard(holder, trade, strategies) {
     } catch (e) { notify("Не сохранилось: " + e.message, "error", 6000); }
   };
 
-  // Скриншоты
+  // Скриншоты — галерея (спека 1b): сетка 16:10, тап → лайтбокс, крестик удаляет с подтверждением
   const renderAtts = async () => {
     const box = holder.querySelector(".atts");
     const atts = await loadAttachments(trade.id);
-    box.innerHTML = atts.length ? atts.map((a) => `
-      <div class="att">
-        <span class="zoom" data-url="${esc(a.url)}"><img src="${esc(a.url)}" alt="${esc(a.name ?? "скриншот")}"></span>
-        <div class="row small"><a href="${esc(a.url)}" download>${esc(a.name ?? "файл")}</a>
-        <button class="btn small att-del" data-id="${a.id}">Удалить</button></div>
-      </div>`).join("") : `<div class="muted small">Нет скриншотов</div>`;
-    box.querySelectorAll(".zoom").forEach((el) => el.onclick = () => openLightbox(el.dataset.url));
-    box.querySelectorAll(".att-del").forEach((b) => b.onclick = async () => {
-      if (!(await confirmToast("Удалить скриншот? Действие необратимо."))) return;
-      await deleteAttachment(atts.find((a) => a.id === b.dataset.id));
-      renderAtts();
+    if (!atts.length) { box.innerHTML = `<div class="muted small">Нет скриншотов</div>`; box.classList.remove("gal"); return; }
+    renderGallery(box, atts.map((a) => ({ url: a.url, caption: a.name ?? "скриншот" })), {
+      onRemove: async (i) => {
+        if (!(await confirmToast("Удалить скриншот? Действие необратимо."))) return;
+        await deleteAttachment(atts[i]);
+        renderAtts();
+      },
     });
   };
   renderAtts();

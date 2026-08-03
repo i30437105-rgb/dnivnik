@@ -139,4 +139,22 @@ export function initWaves(container) {
       </ol>
       <p class="muted small">Полный канон: файл «канон-v2.md» в папке «Стратегия 1.0» — при расхождениях он главнее этой памятки.</p>
     </section>`;
+
+  // Липкое оглавление-чипы (мобила, спека 2f): тап скроллит к секции
+  const anchors = [
+    ["Правила", "железных правила"], ["Волны", "Волны по одной"],
+    ["Коррекции", "Коррекции — база"], ["Протокол", "протокол канона"],
+  ];
+  const nav = document.createElement("nav");
+  nav.className = "wnav";
+  for (const [label, match] of anchors) {
+    const h = [...root.querySelectorAll("h2")].find((x) => x.textContent.includes(match));
+    if (!h) continue;
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = label;
+    b.onclick = () => h.closest("section").scrollIntoView({ behavior: "smooth", block: "start" });
+    nav.appendChild(b);
+  }
+  root.querySelector(".pagehead").after(nav);
 }

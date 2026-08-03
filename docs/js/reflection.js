@@ -122,7 +122,11 @@ async function openDay(dayStr) {
             <textarea class="rf-text" rows="2" placeholder="Что произошло, какой вывод сделал…">${esc(it.text)}</textarea>
           </div>
         </div>
-        <select class="rf-cat" title="Категория">${catOpts(it.category_id)}</select>
+        <select class="rf-cat only-desk" title="Категория">${catOpts(it.category_id)}</select>
+        <div class="rf-chips only-mob">
+          <button type="button" class="chip ${it.category_id == null ? "on" : ""}" data-c="">—</button>
+          ${cats.map((c) => `<button type="button" class="chip ${it.category_id === c.id ? "on" : ""}" data-c="${c.id}" title="${esc(c.name)}">${esc(c.icon)}</button>`).join("")}
+        </div>
         <div class="ce-btns">
           <button type="button" class="btn ghost icon rf-up" title="Выше" ${i === 0 ? "disabled" : ""}>${IC.up}</button>
           <button type="button" class="btn ghost icon rf-down" title="Ниже" ${i === items.length - 1 ? "disabled" : ""}>${IC.down}</button>
@@ -134,6 +138,11 @@ async function openDay(dayStr) {
       const i = Number(row.dataset.i);
       row.querySelector(".rf-text").oninput = (e) => { items = items.map((x, k) => k === i ? { ...x, text: e.target.value } : x); };
       row.querySelector(".rf-cat").onchange = (e) => { items = items.map((x, k) => k === i ? { ...x, category_id: e.target.value ? Number(e.target.value) : null } : x); };
+      // мобила: ряд эмодзи-чипов вместо селекта (спека 2g)
+      row.querySelectorAll(".rf-chips .chip").forEach((ch) => ch.onclick = () => {
+        items = items.map((x, k) => k === i ? { ...x, category_id: ch.dataset.c ? Number(ch.dataset.c) : null } : x);
+        drawItems();
+      });
       row.querySelector(".rf-up").onclick = () => { items = swap(items, i, i - 1); drawItems(); };
       row.querySelector(".rf-down").onclick = () => { items = swap(items, i, i + 1); drawItems(); };
       row.querySelector(".rf-rm").onclick = () => { items = items.filter((_, k) => k !== i); drawItems(); };

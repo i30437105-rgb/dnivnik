@@ -5,7 +5,7 @@ import {
 } from "./api.js";
 import {
   state, esc, usd, pct, fmtRu, fmtDT, fmtDay, fmtDur, todayLocal, addDays,
-  sortableTable, busyButton, openModal, statusLine, price,
+  sortableTable, busyButton, openModal, statusLine, price, isMobile,
 } from "./util.js";
 import { renderTradeCard } from "./tradecard.js";
 
@@ -246,7 +246,15 @@ function renderSummary(d, lastSnap, diary) {
       <div class="muted small">${lastSnap ? "на " + fmtDT(lastSnap.ts) : ""}${lastSnap?.upl != null && Math.abs(lastSnap.upl) >= 0.005 ? ` · в т.ч. открытые позиции ${usd(Number(lastSnap.upl), { sign: true })}` : ""}</div></div>
     <div class="card hero ${res > 0 ? "pos" : res < 0 ? "neg" : ""}"><div class="k">Результат дня <span class="muted small">без плавающего PnL</span></div>
       <div class="v ${res > 0 ? "green" : res < 0 ? "red" : ""}">${usd(res, { sign: true })} <span class="hint ${res > 0 ? "green" : res < 0 ? "red" : ""}">${pct(resPct)}</span></div>
-      <div class="muted small">= сделки ${usd(closed, { sign: true })} + фандинг/комиссии ${usd(other, { sign: true })}${Math.abs(uplNow) >= 0.005 ? ` · плавающий ${usd(uplNow, { sign: true })} не входит` : ""} · % — от дневного депозита${vaultV > 0 ? " в работе" : ""}</div></div>
+      <div class="muted small only-desk">= сделки ${usd(closed, { sign: true })} + фандинг/комиссии ${usd(other, { sign: true })}${Math.abs(uplNow) >= 0.005 ? ` · плавающий ${usd(uplNow, { sign: true })} не входит` : ""} · % — от дневного депозита${vaultV > 0 ? " в работе" : ""}</div>
+      <div class="only-mob">
+        <div class="hero-break">
+          <div><span class="hk">сделки</span><span class="hv num">${usd(closed, { sign: true })}</span></div>
+          <div><span class="hk">фандинг / комиссии</span><span class="hv num">${usd(other, { sign: true })}</span></div>
+          ${Math.abs(uplNow) >= 0.005 ? `<div class="dim"><span class="hk">плавающий · не входит</span><span class="hv num">${usd(uplNow, { sign: true })}</span></div>` : ""}
+        </div>
+        <div class="muted small" style="margin-top:9px">% — от дневного депозита${vaultV > 0 ? " в работе" : ""}</div>
+      </div></div>
     <div class="card"><div class="k">Закрыто сделками за день</div>
       <div class="v ${closed > 0 ? "green" : closed < 0 ? "red" : ""}">${usd(closed, { sign: true })}</div>
       <div class="muted small">чистый итог ${d.trades_count || 0} закрытых сделок</div></div>
@@ -454,27 +462,47 @@ function renderStats(days, trades, stratName) {
   const longs = trades.filter((t) => t.side === "Buy");
   const shorts = trades.filter((t) => t.side === "Sell");
 
-  const li = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
-  el.innerHTML = `<div class="stats">
-    ${li("Баланс за период", `${usd(startBal)} → ${usd(endBal)}`)}
+  // Первые 4 метрики — главные (спека 1d), остальные на мобиле сворачиваются под «Ещё N метрик»
+  const li = (k, v, extra = false) => `<div class="stat ${extra ? "extra" : ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  el.innerHTML = `<div class="stats collapsed">
     ${li("Результат", `${usd(totalRes, { sign: true })} ${withData[0] && workStart(withData[0]) > 0 ? "(" + pct(totalRes / workStart(withData[0]) * 100) + ") от рабочего капитала" : ""}`)}
-    ${li("Сделок", `${trades.length} <span class="muted">(${wins.length} прибыльных / ${losses.length} убыточных)</span>`)}
     ${li("Win rate", trades.length ? pct(wins.length / trades.length * 100, { sign: false }) : "—")}
-    ${li("Дней цель выполнена", `${goalDays} из ${withData.length}`)}
-    ${li("Прибыльных / убыточных дней", `${results.filter((r) => r > 0).length} / ${results.filter((r) => r < 0).length}`)}
-    ${li("Средняя прибыльная / убыточная", `${wins.length ? usd(sumW / wins.length) : "—"} / ${losses.length ? usd(sumL / losses.length) : "—"}`)}
-    ${li("Лучшая / худшая сделка", `${trades.length ? usd(Math.max(...trades.map((t) => +t.pnl)), { sign: true }) + " / " + usd(Math.min(...trades.map((t) => +t.pnl)), { sign: true }) : "—"}`)}
+    ${li("Сделок", `${trades.length} <span class="muted">(${wins.length} прибыльных / ${losses.length} убыточных)</span>`)}
     ${li("Profit factor", sumL !== 0 ? fmtRu(Math.abs(sumW / sumL), 2) : (sumW > 0 ? "∞" : "—"))}
-    ${li("Макс. просадка (по дням)", usd(dd))}
-    ${li("Комиссии", usd(fees))}
-    ${li("Среднее время сделки", durs.length ? fmtDur(durs.reduce((a, b) => a + b, 0) / durs.length) : "—")}
-    ${li("Long / Short", `${longs.length} (${usd(longs.reduce((s, t) => s + +t.pnl, 0), { sign: true })}) / ${shorts.length} (${usd(shorts.reduce((s, t) => s + +t.pnl, 0), { sign: true })})`)}
+    ${li("Баланс за период", `${usd(startBal)} → ${usd(endBal)}`, true)}
+    ${li("Дней цель выполнена", `${goalDays} из ${withData.length}`, true)}
+    ${li("Прибыльных / убыточных дней", `${results.filter((r) => r > 0).length} / ${results.filter((r) => r < 0).length}`, true)}
+    ${li("Средняя прибыльная / убыточная", `${wins.length ? usd(sumW / wins.length) : "—"} / ${losses.length ? usd(sumL / losses.length) : "—"}`, true)}
+    ${li("Лучшая / худшая сделка", `${trades.length ? usd(Math.max(...trades.map((t) => +t.pnl)), { sign: true }) + " / " + usd(Math.min(...trades.map((t) => +t.pnl)), { sign: true }) : "—"}`, true)}
+    ${li("Макс. просадка (по дням)", usd(dd), true)}
+    ${li("Комиссии", usd(fees), true)}
+    ${li("Среднее время сделки", durs.length ? fmtDur(durs.reduce((a, b) => a + b, 0) / durs.length) : "—", true)}
+    ${li("Long / Short", `${longs.length} (${usd(longs.reduce((s, t) => s + +t.pnl, 0), { sign: true })}) / ${shorts.length} (${usd(shorts.reduce((s, t) => s + +t.pnl, 0), { sign: true })})`, true)}
+  </div>
+  <button class="stats-more" type="button">Ещё 9 метрик
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg></button>
+  <div class="bd-chips seg">
+    <button class="btn primary" data-b="0">Монеты</button>
+    <button class="btn" data-b="1">Стратегии</button>
+    <button class="btn" data-b="2">Часы</button>
   </div>
   <div class="grid3">
     ${breakdown("По монетам", bySym)}
     ${breakdown("По стратегиям", byStrat)}
     ${breakdown("По часам закрытия", byHour, true)}
   </div>`;
+
+  const statsEl = el.querySelector(".stats");
+  el.querySelector(".stats-more").onclick = (e) => {
+    const open = statsEl.classList.toggle("collapsed");
+    e.currentTarget.firstChild.textContent = open ? "Ещё 9 метрик" : "Свернуть ";
+  };
+  const blocks = el.querySelectorAll(".grid3 > div");
+  blocks[0]?.classList.add("on");
+  el.querySelectorAll(".bd-chips .btn").forEach((b) => b.onclick = () => {
+    el.querySelectorAll(".bd-chips .btn").forEach((x) => x.classList.toggle("primary", x === b));
+    blocks.forEach((x, i) => x.classList.toggle("on", i === Number(b.dataset.b)));
+  });
 }
 
 function breakdown(title, map, sortKey = false) {
@@ -494,6 +522,37 @@ function renderTradesTable(container, trades, strategies) {
   const short = (iso) => iso ? new Intl.DateTimeFormat("ru-RU", {
     timeZone: state.tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
   }).format(new Date(iso)) : "—";
+
+  // Мобила (спека 1d): карточные строки вместо таблицы, тап → лист с карточкой сделки
+  if (isMobile()) {
+    container.innerHTML = trades.length ? `<div class="trlist">${trades.map((t) => `
+      <button type="button" class="trowc" data-id="${esc(t.id)}">
+        <div style="flex:1;min-width:0">
+          <div class="row" style="gap:7px">
+            <span class="sym num">${esc(t.symbol)}</span>
+            <span class="bdg ${t.side === "Buy" ? "long" : "short"}">${t.side === "Buy" ? "LONG" : "SHORT"}${t.leverage ? ` ${esc(t.leverage)}×` : ""}</span>
+          </div>
+          <div class="meta num">${short(t.opened_at)} → ${short(t.closed_at)}${t.opened_at && t.closed_at ? ` · ${fmtDur(new Date(t.closed_at) - new Date(t.opened_at))}` : ""}</div>
+          ${t.trade_notes?.comment || t.attachments?.length ? `<div class="marks">${t.trade_notes?.comment ? "💬" : ""}${t.attachments?.length ? ` 📎${t.attachments.length}` : ""}</div>` : ""}
+        </div>
+        <div>
+          <div class="pnl num ${t.pnl > 0 ? "green" : t.pnl < 0 ? "red" : ""}">${usd(t.pnl, { sign: true })}</div>
+          <div class="pp num">${t.entry_price * t.qty > 0 ? pct(t.pnl / (t.entry_price * t.qty) * 100) : ""}</div>
+        </div>
+        <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </button>`).join("")}</div>`
+      : `<div class="muted" style="padding:14px">Сделок за период нет</div>`;
+    container.querySelectorAll(".trowc").forEach((b) => b.onclick = () => {
+      const t = trades.find((x) => String(x.id) === b.dataset.id);
+      if (!t) return;
+      const modal = openModal(`
+        <h2>${esc(t.symbol)} <span class="${t.side === "Buy" ? "green" : "red"}">${t.side === "Buy" ? "Long" : "Short"}</span>
+          <span class="num ${t.pnl > 0 ? "green" : t.pnl < 0 ? "red" : ""}">${usd(t.pnl, { sign: true })}</span></h2>
+        <div class="tc-holder"><div class="muted">Загружаю…</div></div>`, { wide: true });
+      renderTradeCard(modal.el.querySelector(".tc-holder"), t, strategies);
+    });
+    return;
+  }
   sortableTable(container, [
     { key: "sym", label: "Монета", type: "str", get: (t) => t.symbol,
       render: (t) => `<b>${esc(t.symbol)}</b><span class="sub"><span class="${t.side === "Buy" ? "green" : "red"}">${t.side === "Buy" ? "Long" : "Short"}</span>${t.leverage ? " · " + esc(t.leverage) + "x" : ""}</span>` },
