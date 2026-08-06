@@ -336,3 +336,62 @@ create policy "auth screens read"   on storage.objects for select to authenticat
 create policy "auth screens write"  on storage.objects for insert to authenticated with check (bucket_id = 'screens');
 create policy "auth screens update" on storage.objects for update to authenticated using (bucket_id = 'screens');
 create policy "auth screens delete" on storage.objects for delete to authenticated using (bucket_id = 'screens');
+
+-- ---------- Симулятор торговли (техдок 22) ----------
+-- Эпохи виртуального счёта: обнуление депозита закрывает эпоху (closed_at), история остаётся
+create table if not exists sim_accounts (
+  id bigint generated always as identity primary key,
+  start_deposit numeric not null,
+  balance numeric not null,
+  created_at timestamptz not null default now(),
+  closed_at timestamptz
+);
+
+create table if not exists sim_sessions (
+  id bigint generated always as identity primary key,
+  account_id bigint not null references sim_accounts(id) on delete cascade,
+  symbol text not null,
+  timeframe text not null,
+  from_ts timestamptz not null,
+  to_ts timestamptz not null,
+  random boolean not null default false,
+  fee_pct numeric not null default 0.055,
+  funding boolean not null default false,
+  created_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index if not exists sim_sessions_account on sim_sessions(account_id);
+
+create table if not exists sim_trades (
+  id bigint generated always as identity primary key,
+  session_id bigint not null references sim_sessions(id) on delete cascade,
+  side text not null check (side in ('long','short')),
+  margin numeric not null,
+  leverage numeric not null,
+  qty numeric not null,
+  entry_ts timestamptz not null,
+  entry_price numeric not null,
+  exit_ts timestamptz,
+  exit_price numeric,
+  tp_price numeric,
+  sl_price numeric,
+  exit_reason text check (exit_reason in ('manual','tp','sl','liq','end')),
+  pnl numeric,
+  fees numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists sim_trades_session on sim_trades(session_id);
+
+alter table sim_accounts enable row level security;
+alter table sim_sessions enable row level security;
+alter table sim_trades  enable row level security;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['sim_accounts','sim_sessions','sim_trades']
+  loop
+    execute format('drop policy if exists "auth all %1$s" on %1$I', t);
+    execute format('create policy "auth all %1$s" on %1$I for all to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;

@@ -789,3 +789,86 @@ details.block[open] > summary { margin-bottom: 4px; }
 .glb-dots span { width: 6px; height: 6px; border-radius: 50%; background: #3a332b; }
 .glb-dots span.on { width: 18px; border-radius: var(--r-full); background: var(--accent-text); }
 body.lightbox-open .side { display: none; }
+
+/* ---------- Симулятор (техдок 22) ---------- */
+#sim-body h3, .sim-work h3 { font-size: var(--fs-14); font-weight: 700; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#sim-body .empty, .modal .sim-empty { color: var(--text-dim); padding: 18px 4px; font-size: 13px; }
+.fld { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12);
+  color: var(--text-muted); min-width: 0; }
+.fld input[type="range"] { accent-color: var(--accent); }
+
+/* Карточка счёта */
+.sim-acc { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; }
+.sim-acc-grid { display: flex; gap: 14px 38px; flex-wrap: wrap; }
+.sim-acc .sa { display: flex; flex-direction: column; gap: 5px; }
+.sim-acc .sa b { font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+.sim-acc .lbl, .sim-preview .lbl, .sim-posgrid .lbl, .sim-sessgrid .lbl, .sim-tdetails .lbl {
+  font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-dim); }
+.sim-newacc { align-items: flex-end; gap: 14px; }
+.sim-newacc .fld { flex: 0 0 220px; }
+
+/* Настройка сессии */
+.sim-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px 14px; align-items: end; }
+#ss-status { margin-top: 10px; font-size: 12.5px; min-height: 18px; }
+
+/* Рабочий экран */
+.sim-work { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px;
+  align-items: start; }
+.sim-chartbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 10px; }
+.sim-tools { display: flex; gap: 4px; }
+.tool { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border-soft);
+  background: var(--bg-2); color: var(--text-muted); display: flex; align-items: center;
+  justify-content: center; cursor: pointer; transition: all .12s; }
+.tool:hover { color: var(--text); border-color: var(--border); background: var(--bg-3); }
+.sim-sym { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+#sim-chart { height: 520px; min-height: 300px; }
+.sim-replay { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.sim-replay .spacer { flex: 1; }
+#sw-progress { font-size: 12px; }
+
+/* Боковая панель: торговля / позиция / сессия */
+.sim-side { display: flex; flex-direction: column; gap: 14px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.sim-preview { display: flex; flex-direction: column; gap: 7px; background: var(--bg-inset);
+  border: 1px solid var(--border-hair); border-radius: 10px; padding: 11px 13px;
+  margin-top: 12px; font-size: 12.5px; }
+.sim-preview > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sim-openrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.btn.buy { background: var(--pos-strong); border-color: var(--pos-strong); color: #fff;
+  font-weight: 700; }
+.btn.sell { background: var(--neg); border-color: var(--neg); color: #fff; font-weight: 700; }
+.btn.buy:hover, .btn.sell:hover { filter: brightness(1.09); }
+.sim-posgrid, .sim-sessgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 14px; }
+.sim-posgrid > div, .sim-sessgrid > div { display: flex; flex-direction: column; gap: 3px;
+  font-size: 13px; }
+.sim-sessgrid b { font-size: 16px; }
+.warn-t { color: var(--warn); }
+.sim-closebtn { width: 100%; margin-top: 13px; }
+
+/* Карточка сделки (модалка) и плитки автоскринов */
+.sim-tdetails { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 12px 0 16px; }
+.sim-tdetails > div { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.gal-tile { background-size: cover; background-position: center; }
+.gal-cap { position: absolute; left: 8px; bottom: 7px; font-size: 11px; font-weight: 700;
+  color: var(--text); background: rgba(8, 7, 6, .72); padding: 3px 9px;
+  border-radius: var(--r-full); }
+
+@media (max-width: 1100px) {
+  .sim-work { grid-template-columns: 1fr; }
+  #sim-chart { height: 48vh; }
+}
+@media (max-width: 700px) {
+  .sim-form { grid-template-columns: 1fr 1fr; }
+  .sim-form .fld:first-child { grid-column: 1 / -1; }
+  .sim-acc .sa b { font-size: 20px; }
+  .sim-replay { gap: 8px; }
+  .sim-replay .spacer { flex: 0 0 100%; order: 5; display: none; }
+  .sim-replay #sw-end { margin-left: auto; }
+  #sim-chart { height: 44vh; }
+  .sim-chartbar .sim-sym { display: none; }
+}
