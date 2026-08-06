@@ -57,41 +57,57 @@ function registerExtensions(k) {
     },
   });
 
-  // Разметка волн: клики по вершинам — пунктир между точками + подписи (0) 1 2 3 4 5 / A B C
-  const waveOverlay = (name, labels) => ({
+  // Разметка волн: только подписи у вершин/низов, без линий (по требованию Ивана).
+  // 4 уровня нотации Эллиотта: ((1)) старший → (1) → 1 → i младший; extendData = уровень.
+  const WAVE_SETS = {
+    wave5: [
+      ["((0))", "((1))", "((2))", "((3))", "((4))", "((5))"],
+      ["(0)", "(1)", "(2)", "(3)", "(4)", "(5)"],
+      ["0", "1", "2", "3", "4", "5"],
+      ["0", "i", "ii", "iii", "iv", "v"],
+    ],
+    waveABC: [
+      ["((0))", "((A))", "((B))", "((C))"],
+      ["(0)", "(A)", "(B)", "(C)"],
+      ["0", "A", "B", "C"],
+      ["0", "a", "b", "c"],
+    ],
+  };
+  const WAVE_SIZES = [15, 14, 13, 12];
+  const waveOverlay = (name) => ({
     name,
-    totalStep: labels.length + 1,
+    totalStep: WAVE_SETS[name][0].length + 1,
     needDefaultPointFigure: true,
-    createPointFigures: ({ coordinates }) => {
-      const figs = [];
-      if (coordinates.length > 1) {
-        figs.push({ type: "line", attrs: { coordinates }, styles: { style: "dashed" } });
-      }
-      coordinates.forEach((c, i) => {
-        const prev = coordinates[i - 1];
-        const above = prev ? c.y <= prev.y : true; // подпись со стороны вершины
-        figs.push({
+    createPointFigures: ({ overlay, coordinates }) => {
+      const level = Math.min(Math.max(Number(overlay.extendData) || 3, 1), 4);
+      const labels = WAVE_SETS[name][level - 1];
+      const color = overlay.styles?.text?.color || css("--accent-text") || "#b598fb";
+      return coordinates.map((c, i) => {
+        // подпись над вершиной и под низом: сравниваем с соседними точками разметки
+        const ys = [coordinates[i - 1]?.y, coordinates[i + 1]?.y].filter((v) => v != null);
+        const above = ys.length ? c.y <= Math.min(...ys) : true;
+        return {
           type: "text", ignoreEvent: true,
           attrs: {
             x: c.x, y: above ? c.y - 8 : c.y + 8, text: labels[i] ?? "",
             align: "center", baseline: above ? "bottom" : "top",
           },
           styles: {
-            color: css("--accent-text") || "#b598fb", size: 13, weight: 600,
+            color, size: WAVE_SIZES[level - 1], weight: 600,
             backgroundColor: "rgba(19,17,16,.72)",
             paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
             borderRadius: 4,
           },
-        });
+        };
       });
-      return figs;
     },
   });
-  k.registerOverlay(waveOverlay("wave5", ["(0)", "1", "2", "3", "4", "5"]));
-  k.registerOverlay(waveOverlay("waveABC", ["(0)", "A", "B", "C"]));
+  k.registerOverlay(waveOverlay("wave5"));
+  k.registerOverlay(waveOverlay("waveABC"));
 }
 
-export function createSimChart(el) {
+// hooks: onOverlaySelect(id, name) / onOverlayDeselect() — панель настроек инструмента в UI
+export function createSimChart(el, hooks = {}) {
   const k = window.klinecharts;
   if (!k) throw new Error("Библиотека графика не загрузилась — проверьте интернет");
   registerExtensions(k);
@@ -166,12 +182,25 @@ export function createSimChart(el) {
 
     // Рисование: юзер выбирает инструмент, точки ставит кликами по графику
     draw(name, extendData) {
-      const id = chart.createOverlay(extendData != null ? { name, extendData } : name);
+      const id = chart.createOverlay({
+        name,
+        ...(extendData != null ? { extendData } : {}),
+        onSelected: (e) => { hooks.onOverlaySelect?.(e.overlay.id, e.overlay.name); },
+        onDeselected: () => { hooks.onOverlayDeselect?.(); },
+      });
       for (const i of [].concat(id)) if (i) drawn.add(i);
+    },
+    // Настройки выделенного инструмента: цвет/толщина/тип линии
+    restyleOverlay(id, styles) { chart.overrideOverlay({ id, styles }); },
+    removeDrawn(id) {
+      chart.removeOverlay({ id });
+      drawn.delete(id);
+      hooks.onOverlayDeselect?.();
     },
     clearDrawings() {
       for (const id of drawn) chart.removeOverlay({ id });
       drawn.clear();
+      hooks.onOverlayDeselect?.();
     },
 
     // Линии позиции: вход (сплошная), ликвидация (пунктир), метка B/S на баре входа

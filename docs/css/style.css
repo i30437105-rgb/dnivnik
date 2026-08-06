@@ -878,3 +878,20 @@ body.lightbox-open .side { display: none; }
 #sim-chart { height: 580px; }
 @media (max-width: 1100px) { #sim-chart { height: 54vh; } }
 @media (max-width: 700px) { #sim-chart { height: 50vh; } }
+
+/* Симулятор: панель настроек выделенного инструмента рисования */
+.sim-chartwrap { position: relative; }
+.sim-ovbar { position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px; padding: 6px 8px; z-index: 5;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow-pop); }
+.sim-ovbar .swp { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(0,0,0,.4);
+  cursor: pointer; padding: 0; }
+.sim-ovbar .swp:hover { transform: scale(1.12); }
+.sim-ovbar .ovb { min-width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border-soft);
+  background: var(--bg-1); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0 5px; }
+.sim-ovbar .ovb:hover { color: var(--text); border-color: var(--border); }
+.sim-ovbar .ov-del { color: var(--neg); border-color: var(--neg-bd); }
+.sim-ovbar .ovdiv { width: 1px; height: 18px; background: var(--border); }
+.sim-ovbar.textonly .lineonly { display: none; }

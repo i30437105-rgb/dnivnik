@@ -51,11 +51,27 @@ export function mountWork(ctx) {
           </div>
           <div class="sim-tools">
             ${TOOLS.map((t) => `<button class="tool" data-draw="${t.name}" title="${t.title}">${t.icon}</button>`).join("")}
+            <button class="tool" id="sw-wavelvl" title="Уровень волновой разметки: 1 старший ((1)) → 2 (1) → 3 просто → 4 римские"><span class="tld">ур.${waveLevel()}</span></button>
             <button class="tool" id="sw-clear" title="Стереть разметку">${svg('<path d="m14 5 5 5-9 9H5v-5Z"/><path d="M4 19h9"/>')}</button>
           </div>
           <span class="sim-sym num">${esc(ctx.session.symbol)}</span>
         </div>
-        <div id="sim-chart"></div>
+        <div class="sim-chartwrap">
+          <div id="sim-chart"></div>
+          <div id="sw-ovbar" class="sim-ovbar" hidden>
+            ${["#b598fb", "#ece7df", "#4cc47a", "#f0553f", "#e0a83a"].map((c) =>
+              `<button class="swp" data-c="${c}" style="background:${c}" title="Цвет"></button>`).join("")}
+            <span class="ovdiv lineonly"></span>
+            <button class="ovb lineonly" data-w="1" title="Тонкая">1</button>
+            <button class="ovb lineonly" data-w="2" title="Средняя">2</button>
+            <button class="ovb lineonly" data-w="3" title="Толстая">3</button>
+            <span class="ovdiv lineonly"></span>
+            <button class="ovb lineonly" data-ls="solid" title="Сплошная">━</button>
+            <button class="ovb lineonly" data-ls="dashed" title="Пунктир">╌</button>
+            <span class="ovdiv"></span>
+            <button class="ovb ov-del" title="Удалить инструмент (Del)">${svg('<path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/>')}</button>
+          </div>
+        </div>
         <div class="sim-replay">
           <button id="sw-next" class="btn">След. бар ▸</button>
           <button id="sw-play" class="btn primary">▶ Плей</button>
@@ -73,7 +89,11 @@ export function mountWork(ctx) {
       </aside>
     </div>`;
 
-  W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"));
+  W.selectedOv = null;
+  W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
+    onOverlaySelect: (id, name) => showOvBar(id, name),
+    onOverlayDeselect: () => hideOvBar(),
+  });
   W.chartApi.setBars(ctx.candles.slice(0, W.idx));
 
   const $ = (s) => ctx.root.querySelector(s);
@@ -91,10 +111,37 @@ export function mountWork(ctx) {
   });
   ctx.root.querySelectorAll(".sim-tools .tool[data-draw]").forEach((b) => b.onclick = () => {
     if (b.dataset.draw === "text") return drawText();
+    if (b.dataset.draw === "wave5" || b.dataset.draw === "waveABC")
+      return W.chartApi.draw(b.dataset.draw, waveLevel());
     W.chartApi.draw(b.dataset.draw);
   });
+  $("#sw-wavelvl").onclick = () => {
+    const next = waveLevel() % 4 + 1;
+    localStorage.setItem("sim-wave-level", String(next));
+    $("#sw-wavelvl .tld").textContent = `ур.${next}`;
+  };
   $("#sw-clear").onclick = async () => {
     if (await confirmToast("Стереть всю разметку на графике?", "Стереть")) W.chartApi.clearDrawings();
+  };
+
+  // Панель настроек выделенного инструмента: цвет, толщина, тип линии, удаление
+  const ovbar = $("#sw-ovbar");
+  ovbar.querySelectorAll(".swp").forEach((b) => b.onclick = () => {
+    if (!W.selectedOv) return;
+    const c = b.dataset.c;
+    W.chartApi.restyleOverlay(W.selectedOv.id, {
+      line: { color: c }, text: { color: c },
+      point: { color: c, activeColor: c },
+    });
+  });
+  ovbar.querySelectorAll(".ovb[data-w]").forEach((b) => b.onclick = () => {
+    if (W.selectedOv) W.chartApi.restyleOverlay(W.selectedOv.id, { line: { size: Number(b.dataset.w) } });
+  });
+  ovbar.querySelectorAll(".ovb[data-ls]").forEach((b) => b.onclick = () => {
+    if (W.selectedOv) W.chartApi.restyleOverlay(W.selectedOv.id, { line: { style: b.dataset.ls } });
+  });
+  ovbar.querySelector(".ov-del").onclick = () => {
+    if (W.selectedOv) W.chartApi.removeDrawn(W.selectedOv.id);
   };
 
   W.onResize = () => W.chartApi.resize();
@@ -103,12 +150,36 @@ export function mountWork(ctx) {
     if (!W || e.target.closest("input, textarea, select")) return;
     if (e.code === "ArrowRight") { stopPlay(); next(); e.preventDefault(); }
     if (e.code === "Space") { togglePlay(); e.preventDefault(); }
+    if ((e.code === "Delete" || e.code === "Backspace") && W.selectedOv) {
+      W.chartApi.removeDrawn(W.selectedOv.id);
+      e.preventDefault();
+    }
   };
   document.addEventListener("keydown", W.onKey);
 
   renderPanel();
   renderSess();
   updateTicker();
+}
+
+const waveLevel = () =>
+  Math.min(Math.max(Number(localStorage.getItem("sim-wave-level")) || 3, 1), 4);
+
+function showOvBar(id, name) {
+  if (!W) return;
+  W.selectedOv = { id, name };
+  const bar = W.ctx.root.querySelector("#sw-ovbar");
+  if (!bar) return;
+  // у волновых подписей и текста настраивается только цвет
+  bar.classList.toggle("textonly", ["wave5", "waveABC", "simpleAnnotation"].includes(name));
+  bar.hidden = false;
+}
+
+function hideOvBar() {
+  if (!W) return;
+  W.selectedOv = null;
+  const bar = W.ctx.root.querySelector("#sw-ovbar");
+  if (bar) bar.hidden = true;
 }
 
 function drawText() {
