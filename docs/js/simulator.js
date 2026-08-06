@@ -291,6 +291,14 @@ async function startSession(el) {
       toMs = fromMs + days * 864e5;
     }
     if (candles.length < 30) throw new Error("слишком мало свечей за период (нет данных по паре?)");
+    // История до старта сессии — контекст для тренда и уровней (торговля идёт после неё)
+    const HISTORY_BARS = 1500;
+    let pre = [];
+    try {
+      status.textContent = "Загружаю историю до старта…";
+      pre = await loadKlines(symbol, tfId, fromMs - HISTORY_BARS * tf.ms, fromMs - 1,
+        (n) => { status.textContent = `Загружаю историю до старта… ${n}`; });
+    } catch { pre = []; } // без контекста сессия тоже работает
     status.textContent = "";
     // сессия НЕ пишется в базу здесь — запись появится при первой реальной сделке
     const spec = {
@@ -300,7 +308,7 @@ async function startSession(el) {
     };
     mountWork({
       root: root.querySelector("#sim-body"),
-      account, spec, candles, tf,
+      account, spec, candles: [...pre, ...candles], preLen: pre.length, tf,
       onBalance: (bal) => { account = { ...account, balance: bal }; },
       onExit: () => renderHome(),
     });

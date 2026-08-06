@@ -921,3 +921,9 @@ body.lightbox-open .side { display: none; }
 
 /* Симулятор: панель настроек инструмента — 12 цветов, перенос строк на узких экранах */
 .sim-ovbar { flex-wrap: wrap; justify-content: center; max-width: min(92%, 560px); }
+
+/* Симулятор: инлайн-ввод текста на графике (как в TradingView) */
+.sim-textinp { position: absolute; z-index: 30; min-width: 140px; max-width: 340px;
+  padding: 5px 9px; font-size: 13px; color: var(--text-1);
+  background: var(--bg-2); border: 1px solid var(--accent); border-radius: 7px;
+  box-shadow: var(--shadow-pop); outline: none; }

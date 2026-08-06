@@ -1,7 +1,7 @@
 // Симулятор: рабочий экран сессии — график klinecharts, replay, торговая панель,
 // открытая позиция, автоскрины входа/выхода. Живёт в модульном W: переключение
 // вкладок терминала сессию не убивает (initSimulator проверяет workAlive()).
-import { esc, fmtRu, fmtDT, notify, confirmToast, openModal } from "../util.js";
+import { esc, fmtRu, notify, confirmToast } from "../util.js";
 import * as eng from "./engine.js";
 import * as sapi from "./simapi.js";
 import { TIMEFRAMES, tfById, aggregateBars, loadKlines } from "./data.js";
@@ -17,7 +17,29 @@ const px = (v, ref) => fmtRu(v, pricePrecision(ref ?? v));
 const iso = (ms) => new Date(ms).toISOString();
 const SPEED_MS = { 1: 1000, 5: 200, 20: 50, 100: 10 };
 const REASON_RU = { manual: "вручную", tp: "тейк-профит", sl: "стоп-лосс", liq: "ликвидация", end: "конец сессии" };
-const WARMUP = 60; // видимых баров на старте — разгон перед торговлей
+const WARMUP = 60; // видимых баров на старте, если историю до старта загрузить не удалось
+const PAST_BARS = 1000; // глубина догрузки истории старших ТФ (глобальный тренд, уровни)
+
+// Память стиля инструмента: последний выбранный цвет/толщина/тип применяется к новым
+const savedStyle = (name) => {
+  try { return JSON.parse(localStorage.getItem(`sim-style-${name}`)) ?? null; } catch { return null; }
+};
+const saveStyle = (name, patch) => {
+  try { localStorage.setItem(`sim-style-${name}`, JSON.stringify({ ...(savedStyle(name) ?? {}), ...patch })); }
+  catch { /* квота localStorage не критична */ }
+};
+const stylesFromSaved = (name) => {
+  const s = savedStyle(name);
+  if (!s) return undefined;
+  const line = {};
+  if (s.color) line.color = s.color;
+  if (s.size) line.size = s.size;
+  if (s.ls) line.style = s.ls;
+  const st = {};
+  if (Object.keys(line).length) st.line = line;
+  if (s.color) { st.text = { color: s.color }; st.point = { color: s.color, activeColor: s.color }; }
+  return Object.keys(st).length ? st : undefined;
+};
 
 const svg = (paths, sw = 1.8) =>
   `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
@@ -33,9 +55,11 @@ const TOOLS = [
 ];
 
 export function mountWork(ctx) {
-  const idx = Math.min(WARMUP, ctx.candles.length - 1);
+  // preLen — бары истории до старта сессии: контекст для разметки, replay идёт после них
+  const preLen = Math.min(ctx.preLen ?? 0, Math.max(ctx.candles.length - 1, 0));
+  const idx = preLen > 0 ? preLen : Math.min(WARMUP, ctx.candles.length - 1);
   W = {
-    ctx, idx,
+    ctx, idx, preLen,
     pos: null, closed: [],
     timer: null, speed: 5,
     balance: Number(ctx.account.balance),
@@ -78,6 +102,7 @@ export function mountWork(ctx) {
             <button class="ovb lineonly" data-ls="solid" title="Сплошная">━</button>
             <button class="ovb lineonly" data-ls="dashed" title="Пунктир">╌</button>
             <span class="ovdiv"></span>
+            <button class="ovb ov-copy" title="Копировать элемент (например, для канала)">⧉</button>
             <button class="ovb ov-del" title="Удалить инструмент (Del)">${svg('<path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/>')}</button>
           </div>
         </div>
@@ -100,16 +125,23 @@ export function mountWork(ctx) {
 
   W.selectedOv = null;
   W.drawingActive = false; // идёт постановка точек инструмента
+  W.textMode = false;      // следующий клик по графику ставит поле ввода текста
   W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
     onTpSlDrag: (kind, price) => applyTpSl(kind, price, "drag"),
   }, { hideTime: !!ctx.spec.random });
-  W.chartApi.setBars(ctx.candles.slice(0, W.idx));
+  W.chartApi.setBars(ctx.candles.slice(0, W.idx), ctx.tf.ms);
 
   // клики по графику: во время рисования считаем поставленные точки; вне рисования —
   // свой hit-test решает, попал ли клик в нарисованный объект (панель настроек)
   const chartEl = ctx.root.querySelector("#sim-chart");
   chartEl.addEventListener("click", (e) => {
     if (!W) return;
+    if (W.textMode) {
+      W.textMode = false;
+      const r = chartEl.getBoundingClientRect();
+      placeTextInput(e.clientX - r.left, e.clientY - r.top);
+      return;
+    }
     if (W.drawingActive) {
       W.drawingLeft -= 1;
       if (W.drawingLeft <= 0) {
@@ -142,14 +174,13 @@ export function mountWork(ctx) {
   });
   ctx.root.querySelectorAll("#sw-vtf .btn").forEach((b) => b.onclick = () => switchViewTf(b.dataset.vtf));
   ctx.root.querySelectorAll(".sim-tools .tool[data-draw]").forEach((b) => b.onclick = () => {
-    if (b.dataset.draw === "text") return drawText(); // флаг ставится после ввода текста
+    if (b.dataset.draw === "text") { W.textMode = true; hideOvBar(); return; } // клик по графику — поле ввода
     const tool = TOOLS.find((t) => t.name === b.dataset.draw);
     W.drawingActive = true;
     W.drawingLeft = tool?.pts ?? 2;
     hideOvBar();
-    if (b.dataset.draw === "wave5" || b.dataset.draw === "waveABC")
-      return W.chartApi.draw(b.dataset.draw, waveLevel());
-    W.chartApi.draw(b.dataset.draw);
+    const extend = (b.dataset.draw === "wave5" || b.dataset.draw === "waveABC") ? waveLevel() : undefined;
+    W.chartApi.draw(b.dataset.draw, extend, stylesFromSaved(b.dataset.draw));
   });
   $("#sw-wavelvl").onclick = () => {
     const next = waveLevel() % 4 + 1;
@@ -169,13 +200,23 @@ export function mountWork(ctx) {
       line: { color: c }, text: { color: c },
       point: { color: c, activeColor: c },
     });
+    saveStyle(W.selectedOv.name, { color: c }); // новые элементы этого инструмента — в этом цвете
   });
   ovbar.querySelectorAll(".ovb[data-w]").forEach((b) => b.onclick = () => {
-    if (W.selectedOv) W.chartApi.restyleOverlay(W.selectedOv.id, { line: { size: Number(b.dataset.w) } });
+    if (!W.selectedOv) return;
+    W.chartApi.restyleOverlay(W.selectedOv.id, { line: { size: Number(b.dataset.w) } });
+    saveStyle(W.selectedOv.name, { size: Number(b.dataset.w) });
   });
   ovbar.querySelectorAll(".ovb[data-ls]").forEach((b) => b.onclick = () => {
-    if (W.selectedOv) W.chartApi.restyleOverlay(W.selectedOv.id, { line: { style: b.dataset.ls } });
+    if (!W.selectedOv) return;
+    W.chartApi.restyleOverlay(W.selectedOv.id, { line: { style: b.dataset.ls } });
+    saveStyle(W.selectedOv.name, { ls: b.dataset.ls });
   });
+  ovbar.querySelector(".ov-copy").onclick = () => {
+    if (!W.selectedOv) return;
+    const copy = W.chartApi.cloneDrawn(W.selectedOv.id);
+    if (copy) showOvBar(copy.id, copy.name); // копия сразу выделена — тяни на место
+  };
   ovbar.querySelector(".ov-del").onclick = () => {
     if (W.selectedOv) { W.chartApi.removeDrawn(W.selectedOv.id); hideOvBar(); }
   };
@@ -219,25 +260,35 @@ function hideOvBar() {
   if (bar) bar.hidden = true;
 }
 
-function drawText() {
-  const m = openModal(`
-    <h3>Подпись на графике</h3>
-    <label class="fld"><span>Текст (например, «3» или «C»)</span>
-      <input id="dt-text" maxlength="24" autocomplete="off"></label>
-    <div class="row" style="justify-content:flex-end;margin-top:14px">
-      <button id="dt-ok" class="btn primary">Поставить — затем кликните точку на графике</button>
-    </div>`);
-  const inp = m.el.querySelector("#dt-text");
-  inp.focus();
-  m.el.querySelector("#dt-ok").onclick = () => {
+// Текст как в TradingView: клик по точке графика — поле ввода прямо на месте,
+// Enter/клик мимо — подпись поставлена, Esc — отмена. Без лимита символов.
+function placeTextInput(x, y) {
+  const wrap = W.ctx.root.querySelector(".sim-chartwrap");
+  const chartEl = W.ctx.root.querySelector("#sim-chart");
+  if (!wrap || !chartEl) return;
+  const dx = chartEl.offsetLeft;
+  const dy = chartEl.offsetTop;
+  const inp = document.createElement("input");
+  inp.className = "sim-textinp";
+  inp.placeholder = "Текст…";
+  inp.style.left = `${dx + x}px`;
+  inp.style.top = `${dy + y}px`;
+  wrap.appendChild(inp);
+  setTimeout(() => inp.focus(), 0);
+  let done = false;
+  const commit = (save) => {
+    if (done) return;
+    done = true;
     const t = inp.value.trim();
-    if (!t) return;
-    m.close();
-    W.drawingActive = true;
-    W.drawingLeft = 1;
-    hideOvBar();
-    W.chartApi.draw("simpleAnnotation", t);
+    inp.remove();
+    if (save && t && W) W.chartApi.addTextAt(x, y, t, stylesFromSaved("simpleAnnotation"));
   };
+  inp.onkeydown = (e) => {
+    e.stopPropagation(); // Space/Delete не должны дёргать replay и удаление
+    if (e.key === "Enter") commit(true);
+    if (e.key === "Escape") commit(false);
+  };
+  inp.onblur = () => commit(true);
 }
 
 // ---------- Replay ----------
@@ -248,9 +299,12 @@ const lastBar = () => W.ctx.candles[W.idx - 1];
 // Старшие ТФ агрегируются из «прожитых» баров торгового ТФ (без будущего);
 // история до старта сессии догружается с Bybit — это прошлое, подглядывания нет.
 
+const viewTfMs = () => tfById(W.viewTf).ms;
+
 async function switchViewTf(tfId) {
   if (!W || tfId === W.viewTf) return;
   W.viewTf = tfId;
+  hideOvBar();
   W.ctx.root.querySelectorAll("#sw-vtf .btn").forEach((x) =>
     x.classList.toggle("on", x.dataset.vtf === tfId));
   await ensurePast(tfId);
@@ -264,7 +318,7 @@ async function ensurePast(tfId) {
   const firstBucket = Math.floor(sessionStart / vtf.ms) * vtf.ms;
   try {
     const past = await loadKlines(W.ctx.spec.symbol, tfId,
-      firstBucket - 300 * vtf.ms, firstBucket - 1);
+      firstBucket - PAST_BARS * vtf.ms, firstBucket - 1);
     // бар, в который попадает старт сессии, собираем агрегатом — иначе в нём будущее
     W.pastBars[tfId] = past.filter((b) => b.timestamp < firstBucket);
   } catch {
@@ -280,8 +334,20 @@ function viewBars() {
 }
 
 function refreshView() {
-  W.chartApi.setBars(viewBars());
+  W.chartApi.setBars(viewBars(), viewTfMs());
+  W.chartApi.reanchorDrawings(); // разметка пересаживается по времени — не «едет»
+  redrawPosition();
   updateTicker();
+}
+
+// Линии позиции и TP/SL заново на текущем виде (метка входа — к бару своего bucket'а)
+function redrawPosition() {
+  if (!W.pos) return;
+  const ts = Math.floor(W.pos.entryTs / viewTfMs()) * viewTfMs();
+  W.chartApi.showPosition({
+    side: W.pos.side, entryPrice: W.pos.entryPrice, entryTs: ts, liq: eng.liqPrice(W.pos),
+  });
+  W.chartApi.setTpSl({ tp: W.pos.tpPrice ?? null, sl: W.pos.slPrice ?? null });
 }
 
 // Сессия пишется в базу лениво — при первой реальной сделке (пустые сессии не плодим)
@@ -563,7 +629,7 @@ function renderSess() {
 function updateTicker() {
   if (!W) return;
   const prog = W.ctx.root.querySelector("#sw-progress");
-  if (prog) prog.textContent = `бар ${W.idx} из ${W.ctx.candles.length}`;
+  if (prog) prog.textContent = `бар ${Math.max(0, W.idx - W.preLen)} из ${W.ctx.candles.length - W.preLen}`;
   if (!W.pos) return;
   const price = lastBar().close;
   const u = eng.uPnL(W.pos, price);
@@ -575,6 +641,12 @@ function updateTicker() {
   if (mark) mark.textContent = px(price, W.pos.entryPrice);
   if (upnl) { upnl.textContent = money(u); upnl.className = cls; }
   if (roiEl) { roiEl.textContent = `${roi >= 0 ? "+" : "−"}${fmtRu(Math.abs(roi), 1)}%`; roiEl.className = cls; }
+  // текущий результат виден прямо на графике — плашка у линии входа
+  W.chartApi.setPnlTag({
+    value: W.pos.entryPrice,
+    text: `${money(u)} · ${roi >= 0 ? "+" : "−"}${fmtRu(Math.abs(roi), 1)}%`,
+    positive: u >= 0,
+  });
 }
 
 // ---------- Сделки ----------
@@ -592,7 +664,11 @@ async function openTrade(side) {
   const { tpPrice, slPrice } = tpSlFromPanel(base);
   const pos = { ...base, tpPrice, slPrice };
 
-  W.chartApi.showPosition({ side, entryPrice: pos.entryPrice, entryTs: pos.entryTs, liq: eng.liqPrice(pos) });
+  W.chartApi.showPosition({
+    side, entryPrice: pos.entryPrice,
+    entryTs: Math.floor(pos.entryTs / viewTfMs()) * viewTfMs(), // бар входа на текущем виде
+    liq: eng.liqPrice(pos),
+  });
   W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
   const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой и линиями (§5.4)
   let trade;

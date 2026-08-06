@@ -68,6 +68,27 @@ function registerExtensions(k) {
     },
   });
 
+  // Плашка uPnL/ROI у линии входа (как на Bybit) — обновляется каждый бар
+  k.registerOverlay({
+    name: "pnlTag",
+    totalStep: 2,
+    lock: true,
+    createPointFigures: ({ overlay, coordinates, bounding }) => {
+      const c = coordinates[0];
+      const d = overlay.extendData;
+      if (!c || !d?.text) return [];
+      return [{
+        type: "text",
+        ignoreEvent: true,
+        attrs: { x: bounding.width - 8, y: c.y - 6, text: d.text, align: "right", baseline: "bottom" },
+        styles: {
+          color: "#fff", backgroundColor: d.bg, size: 12, weight: 600,
+          paddingLeft: 7, paddingRight: 7, paddingTop: 3, paddingBottom: 3, borderRadius: 4,
+        },
+      }];
+    },
+  });
+
   // WWV ATR 14 Close (Weis Wave Volume) — объём, накопленный по волнам движения цены;
   // волна разворачивается, когда close откатывает от экстремума волны больше ATR(14).
   k.registerIndicator({
@@ -233,6 +254,72 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   let lastDrawn = null;     // оверлей, который сейчас рисуется (для finishDrawing)
   const posIds = [];        // линии открытой позиции
   const tpsl = { tp: null, sl: null }; // перетаскиваемые уровни
+  let pnlId = null;         // плашка uPnL у линии входа
+
+  // Канон разметки — свой реестр: точки хранятся как (timestamp, value).
+  // klinecharts привязывает оверлеи к индексу бара ТЕКУЩЕГО вида, поэтому при
+  // смене таймфрейма их нужно пересоздавать по времени — иначе разметка «едет».
+  const registry = new Map(); // id -> { name, points:[{timestamp,value}], styles, extendData }
+  let curBars = [];  // бары текущего вида
+  let curTfMs = 0;   // шаг текущего вида (для экстраполяции за края данных)
+
+  // timestamp -> индекс бара вида; за краями — линейная экстраполяция по шагу ТФ
+  const tsToIndex = (ts) => {
+    const n = curBars.length;
+    if (!n || ts == null) return 0;
+    const first = curBars[0].timestamp;
+    const last = curBars[n - 1].timestamp;
+    const step = curTfMs || (n > 1 ? (last - first) / (n - 1) : 1);
+    if (ts <= first) return Math.round((ts - first) / step); // отрицательный — слева за данными
+    if (ts >= last) return n - 1 + Math.round((ts - last) / step);
+    let lo = 0;
+    let hi = n - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (curBars[mid].timestamp <= ts) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  };
+
+  const pointTs = (p) => {
+    if (p.timestamp != null) return p.timestamp;
+    const i = p.dataIndex ?? 0;
+    if (curBars[i]) return curBars[i].timestamp;
+    const n = curBars.length;
+    if (!n) return null;
+    const step = curTfMs || 1;
+    return i < 0 ? curBars[0].timestamp + i * step
+                 : curBars[n - 1].timestamp + (i - (n - 1)) * step;
+  };
+
+  // после рисования/перетаскивания фиксируем актуальные точки в реестре
+  const syncEntry = (id) => {
+    const e = registry.get(id);
+    const ov = chart.getOverlayById?.(id);
+    if (e && ov?.points?.length) {
+      e.points = ov.points.map((p) => ({ timestamp: pointTs(p), value: p.value }));
+    }
+  };
+
+  const mergeStyles = (base = {}, patch = {}) => {
+    const out = { ...base };
+    for (const key of Object.keys(patch)) out[key] = { ...(base[key] ?? {}), ...patch[key] };
+    return out;
+  };
+
+  // создать оверлей из записи реестра (готовым — все точки сразу)
+  const createFromEntry = (e) => {
+    const raw = chart.createOverlay({
+      name: e.name,
+      points: e.points.map((p) => ({ dataIndex: tsToIndex(p.timestamp), value: p.value })),
+      ...(e.styles ? { styles: e.styles } : {}),
+      ...(e.extendData != null ? { extendData: e.extendData } : {}),
+      onPressedMoveEnd: (ev) => syncEntry(ev.overlay.id),
+    });
+    const id = [].concat(raw)[0];
+    if (id) { drawn.add(id); registry.set(id, e); }
+    return id ?? null;
+  };
 
   const tpslLine = (kind, value) => chart.createOverlay({
     name: "priceLine", points: [{ value }],
@@ -248,22 +335,36 @@ export function createSimChart(el, hooks = {}, opts = {}) {
 
   return {
     chart,
-    setBars(list) {
+    setBars(list, tfMs) {
+      curBars = list.slice();
+      if (tfMs) curTfMs = tfMs;
       const last = list[list.length - 1];
       try { chart.setPriceVolumePrecision(pricePrecision(last?.close ?? 1), 3); } catch { /* старая сигнатура */ }
       chart.applyNewData(list.map((c) => ({ ...c })));
     },
-    pushBar(bar) { chart.updateData({ ...bar }); },
+    pushBar(bar) {
+      const last = curBars[curBars.length - 1];
+      if (last && last.timestamp === bar.timestamp) curBars[curBars.length - 1] = { ...bar };
+      else curBars.push({ ...bar });
+      chart.updateData({ ...bar });
+    },
     setType(t) { chart.setStyles({ candle: { type: t === "candles" ? "candle_solid" : "ohlc" } }); },
 
-    // Рисование: юзер выбирает инструмент, точки ставит кликами по графику
-    draw(name, extendData) {
+    // Рисование: юзер выбирает инструмент, точки ставит кликами по графику.
+    // styles — запомненный стиль инструмента (последний выбранный цвет/толщина/тип)
+    draw(name, extendData, styles) {
       const id = chart.createOverlay({
         name,
+        ...(styles ? { styles } : {}),
         ...(extendData != null ? { extendData } : {}),
-        onDrawEnd: (e) => { if (lastDrawn === e.overlay.id) lastDrawn = null; },
+        onDrawEnd: (e) => { if (lastDrawn === e.overlay.id) lastDrawn = null; syncEntry(e.overlay.id); },
+        onPressedMoveEnd: (e) => syncEntry(e.overlay.id),
       });
-      for (const i of [].concat(id)) if (i) { drawn.add(i); lastDrawn = i; }
+      for (const i of [].concat(id)) if (i) {
+        drawn.add(i);
+        lastDrawn = i;
+        registry.set(i, { name, extendData, styles, points: [] });
+      }
     },
 
     // Принудительное завершение рисования: klinecharts сам завершает оверлей только
@@ -278,6 +379,48 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       ov.forceComplete?.();
       try { chart.getChartStore?.().getOverlayStore?.().progressInstanceComplete?.(); }
       catch { /* приватный путь может смениться в будущих версиях — не критично */ }
+      syncEntry(id);
+    },
+
+    // Пересоздание всей разметки по (timestamp, value) — вызывается при смене
+    // таймфрейма отображения, чтобы элементы остались на своих местах
+    reanchorDrawings() {
+      const entries = [...registry.entries()];
+      registry.clear();
+      for (const [id] of entries) { chart.removeOverlay({ id }); drawn.delete(id); }
+      for (const [, e] of entries) if (e.points.length) createFromEntry(e);
+    },
+
+    // Копия элемента со сдвигом по цене (для построения каналов); возвращает {id, name}
+    cloneDrawn(id) {
+      const e = registry.get(id);
+      if (!e?.points?.length) return null;
+      const vis = curBars.slice(-250);
+      const span = vis.length
+        ? Math.max(...vis.map((b) => b.high)) - Math.min(...vis.map((b) => b.low)) : 0;
+      const off = span ? span * 0.05 : Math.abs(e.points[0].value || 1) * 0.002;
+      const copy = {
+        name: e.name,
+        extendData: e.extendData,
+        styles: e.styles ? JSON.parse(JSON.stringify(e.styles)) : undefined,
+        points: e.points.map((p) => ({ ...p, value: p.value + off })),
+      };
+      const nid = createFromEntry(copy);
+      return nid ? { id: nid, name: copy.name } : null;
+    },
+
+    // Текст по клику в точку графика (как в TradingView), без лимита символов
+    addTextAt(x, y, text, styles) {
+      const p = [].concat(chart.convertFromPixel([{ x, y }], { paneId: "candle_pane" }))[0];
+      if (!p || p.value == null) return null;
+      const e = {
+        name: "simpleAnnotation",
+        extendData: text,
+        styles: styles ? JSON.parse(JSON.stringify(styles)) : undefined,
+        points: [{ timestamp: pointTs(p), value: p.value }],
+      };
+      const id = createFromEntry(e);
+      return id ? { id, name: "simpleAnnotation" } : null;
     },
 
     // Свой hit-test по клику: события кликов по фигурам в klinecharts ненадёжны,
@@ -295,7 +438,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       for (const id of drawn) {
         const ov = chart.getOverlayById?.(id);
         if (!ov?.points?.length) continue;
-        const tol = ov.name === "wave5" || ov.name === "waveABC" ? 24 : 12;
+        const tol = ov.name === "wave5" || ov.name === "waveABC" ? 24 : 14;
         const cs = [].concat(chart.convertToPixel(
           ov.points.map((p) => ({ timestamp: p.timestamp, dataIndex: p.dataIndex, value: p.value })),
           { paneId: "candle_pane" },
@@ -319,15 +462,21 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       return best;
     },
     // Настройки выделенного инструмента: цвет/толщина/тип линии
-    restyleOverlay(id, styles) { chart.overrideOverlay({ id, styles }); },
+    restyleOverlay(id, styles) {
+      chart.overrideOverlay({ id, styles });
+      const e = registry.get(id);
+      if (e) e.styles = mergeStyles(e.styles, styles);
+    },
     removeDrawn(id) {
       chart.removeOverlay({ id });
       drawn.delete(id);
+      registry.delete(id);
       hooks.onOverlayDeselect?.();
     },
     clearDrawings() {
       for (const id of drawn) chart.removeOverlay({ id });
       drawn.clear();
+      registry.clear();
       hooks.onOverlayDeselect?.();
     },
 
@@ -353,6 +502,23 @@ export function createSimChart(el, hooks = {}, opts = {}) {
     hidePosition() {
       for (const id of posIds.splice(0)) if (id) chart.removeOverlay({ id });
       this.setTpSl({ tp: null, sl: null });
+      this.setPnlTag(null);
+    },
+
+    // Плашка uPnL/ROI у линии входа: tag = {value, text, positive} или null
+    setPnlTag(tag) {
+      if (!tag) {
+        if (pnlId) { chart.removeOverlay({ id: pnlId }); pnlId = null; }
+        return;
+      }
+      const data = { text: tag.text, bg: tag.positive ? "rgba(31,122,68,.92)" : "rgba(178,45,30,.92)" };
+      if (pnlId && chart.getOverlayById?.(pnlId)) {
+        chart.overrideOverlay({ id: pnlId, points: [{ value: tag.value }], extendData: data });
+      } else {
+        pnlId = chart.createOverlay({
+          name: "pnlTag", lock: true, points: [{ value: tag.value }], extendData: data,
+        });
+      }
     },
 
     // Линии TP/SL: создать/подвинуть/убрать; таскаются мышью (onTpSlDrag)
