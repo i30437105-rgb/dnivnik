@@ -63,7 +63,10 @@ async function renderHome() {
           <span class="num ${cls}">${diff >= 0 ? "+" : "−"}${money(Math.abs(diff)).slice(diff < 0 ? 1 : 0)} · ${diffPct >= 0 ? "+" : "−"}${fmtRu(Math.abs(diffPct), 1)}%</span></div>
         <div class="sa"><span class="lbl">Сессий · сделок</span><span class="num">${totals.sessions} · ${totals.trades}</span></div>
       </div>
-      <button id="sim-reset" class="btn ghost small">⟲ Обнулить депозит</button>
+      <div class="row sim-accbtns">
+        <button id="sim-rename" class="btn ghost small">✎ Переименовать</button>
+        <button id="sim-reset" class="btn ghost small">⟲ Обнулить депозит</button>
+      </div>
     </div>
     <div class="block sim-setup">
       <h3>Новая сессия <span class="muted">счёт «${esc(account.name)}»</span></h3>
@@ -79,6 +82,7 @@ async function renderHome() {
     renderHome();
   });
   body.querySelector("#sim-newacc").onclick = () => openAccountModal();
+  body.querySelector("#sim-rename").onclick = renameAccount;
   body.querySelector("#sim-reset").onclick = resetAccount;
   bindSetup(body.querySelector(".sim-setup"));
   renderStats(body.querySelector("#sim-stats"), account);
@@ -137,6 +141,31 @@ async function createAccount(nameRaw, depRaw) {
     notify("Ошибка: " + e.message, "error", 6000);
     return false;
   }
+}
+
+function renameAccount() {
+  const m = openModal(`
+    <h3>Переименовать счёт</h3>
+    <label class="fld"><span>Новое название</span>
+      <input id="rn-name" maxlength="40" value="${esc(account.name)}"></label>
+    <p class="muted" style="margin-top:8px">Название обновится и в прошлых эпохах — вся история останется при счёте.</p>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button id="rn-ok" class="btn primary">Сохранить</button>
+    </div>`);
+  const input = m.el.querySelector("#rn-name");
+  input.focus(); input.select();
+  m.el.querySelector("#rn-ok").onclick = async () => {
+    const name = input.value.trim();
+    if (!name) return notify("Введите название", "error");
+    if (name === account.name) { m.close(); return; }
+    if (accounts.some((a) => a.name === name)) return notify("Счёт с таким названием уже есть", "error");
+    try {
+      await sapi.renameAccount(account.name, name);
+      m.close();
+      notify("Счёт переименован");
+      renderHome();
+    } catch (e) { notify("Ошибка: " + e.message, "error", 6000); }
+  };
 }
 
 async function resetAccount() {

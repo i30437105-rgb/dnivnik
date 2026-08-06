@@ -34,6 +34,18 @@ export async function loadSessions(accountId) {
   return data ?? [];
 }
 
+// Переименование: эпохи связаны по имени, поэтому обновляем все разом,
+// включая закрытые — иначе прошлые эпохи отвяжутся от счёта
+export async function renameAccount(oldName, newName) {
+  const { data, error: e1 } = await sb.from("sim_accounts")
+    .select("id").eq("name", newName).limit(1);
+  if (e1) throw new Error(e1.message);
+  if (data?.length) throw new Error("счёт с таким названием уже существует (возможно, в прошлых эпохах)");
+  const { error } = await sb.from("sim_accounts")
+    .update({ name: newName }).eq("name", oldName);
+  if (error) throw new Error(error.message);
+}
+
 // Обнуление: закрываем эпоху (история остаётся), новую создаёт createAccount
 export async function closeAccount(id) {
   const { error } = await sb.from("sim_accounts")
