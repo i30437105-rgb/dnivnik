@@ -20,14 +20,15 @@ const WARMUP = 60; // видимых баров на старте — разго
 
 const svg = (paths, sw = 1.8) =>
   `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+// pts — сколько кликов ставит инструмент (детект окончания рисования)
 const TOOLS = [
-  { name: "segment", title: "Трендовая линия", icon: svg('<path d="M5 19 19 5"/><circle cx="5" cy="19" r="1.6"/><circle cx="19" cy="5" r="1.6"/>') },
-  { name: "rayLine", title: "Луч", icon: svg('<path d="M5 19 17 7"/><path d="M13.5 5.5H18.5V10.5"/><circle cx="5" cy="19" r="1.6"/>') },
-  { name: "horizontalStraightLine", title: "Горизонтальный уровень", icon: svg('<path d="M4 12h16"/><circle cx="12" cy="12" r="1.6"/>') },
-  { name: "fibonacciLine", title: "Фибо-ретрейсмент", icon: svg('<path d="M4 6h16M4 12h16M4 18h16"/>') },
-  { name: "wave5", title: "Пятиволновка: 6 кликов по вершинам — (0) 1 2 3 4 5", icon: '<span class="tld">1-5</span>' },
-  { name: "waveABC", title: "Коррекция: 4 клика по вершинам — (0) A B C", icon: '<span class="tld">ABC</span>' },
-  { name: "text", title: "Текст (свободная подпись)", icon: svg('<path d="M6 6h12M12 6v12"/>', 2) },
+  { name: "simSegment", pts: 2, title: "Трендовая линия (с Shift — горизонтальная)", icon: svg('<path d="M5 19 19 5"/><circle cx="5" cy="19" r="1.6"/><circle cx="19" cy="5" r="1.6"/>') },
+  { name: "simRay", pts: 2, title: "Луч (с Shift — горизонтальный)", icon: svg('<path d="M5 19 17 7"/><path d="M13.5 5.5H18.5V10.5"/><circle cx="5" cy="19" r="1.6"/>') },
+  { name: "horizontalStraightLine", pts: 1, title: "Горизонтальный уровень", icon: svg('<path d="M4 12h16"/><circle cx="12" cy="12" r="1.6"/>') },
+  { name: "fibonacciLine", pts: 2, title: "Фибо-ретрейсмент", icon: svg('<path d="M4 6h16M4 12h16M4 18h16"/>') },
+  { name: "wave5", pts: 6, title: "Пятиволновка: 6 кликов по вершинам — (0) 1 2 3 4 5", icon: '<span class="tld">1-5</span>' },
+  { name: "waveABC", pts: 4, title: "Коррекция: 4 клика по вершинам — (0) A B C", icon: '<span class="tld">ABC</span>' },
+  { name: "text", pts: 1, title: "Текст (свободная подпись)", icon: svg('<path d="M6 6h12M12 6v12"/>', 2) },
 ];
 
 export function mountWork(ctx) {
@@ -54,12 +55,13 @@ export function mountWork(ctx) {
             <button class="tool" id="sw-wavelvl" title="Уровень волновой разметки: 1 старший ((1)) → 2 (1) → 3 просто → 4 римские"><span class="tld">ур.${waveLevel()}</span></button>
             <button class="tool" id="sw-clear" title="Стереть разметку">${svg('<path d="m14 5 5 5-9 9H5v-5Z"/><path d="M4 19h9"/>')}</button>
           </div>
-          <span class="sim-sym num">${esc(ctx.session.symbol)}</span>
+          <span class="sim-sym num">${esc(ctx.spec.symbol)}</span>
         </div>
         <div class="sim-chartwrap">
           <div id="sim-chart"></div>
           <div id="sw-ovbar" class="sim-ovbar" hidden>
-            ${["#b598fb", "#ece7df", "#4cc47a", "#f0553f", "#e0a83a"].map((c) =>
+            ${["#b598fb", "#ece7df", "#9b9389", "#4cc47a", "#a3e635", "#2dd4bf",
+               "#4db8ff", "#5c7cfa", "#f06292", "#f0553f", "#ff9040", "#e0a83a"].map((c) =>
               `<button class="swp" data-c="${c}" style="background:${c}" title="Цвет"></button>`).join("")}
             <span class="ovdiv lineonly"></span>
             <button class="ovb lineonly" data-w="1" title="Тонкая">1</button>
@@ -90,12 +92,33 @@ export function mountWork(ctx) {
     </div>`;
 
   W.selectedOv = null;
+  W.drawingActive = false; // идёт постановка точек инструмента
   W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
-    onOverlaySelect: (id, name) => showOvBar(id, name),
-    onOverlayDeselect: () => hideOvBar(),
     onTpSlDrag: (kind, price) => applyTpSl(kind, price, "drag"),
-  }, { hideTime: !!ctx.session.random });
+  }, { hideTime: !!ctx.spec.random });
   W.chartApi.setBars(ctx.candles.slice(0, W.idx));
+
+  // клики по графику: во время рисования считаем поставленные точки; вне рисования —
+  // свой hit-test решает, попал ли клик в нарисованный объект (панель настроек)
+  const chartEl = ctx.root.querySelector("#sim-chart");
+  chartEl.addEventListener("click", (e) => {
+    if (!W) return;
+    if (W.drawingActive) {
+      W.drawingLeft -= 1;
+      if (W.drawingLeft <= 0) {
+        setTimeout(() => {
+          if (!W) return;
+          W.chartApi.finishDrawing(); // все точки поставлены — завершаем сами
+          W.drawingActive = false;
+        }, 120);
+      }
+      return;
+    }
+    const rect = chartEl.getBoundingClientRect();
+    const hit = W.chartApi.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit) showOvBar(hit.id, hit.name);
+    else hideOvBar();
+  });
 
   const $ = (s) => ctx.root.querySelector(s);
   $("#sw-next").onclick = () => { stopPlay(); next(); };
@@ -111,7 +134,11 @@ export function mountWork(ctx) {
     W.chartApi.setType(b.dataset.ct);
   });
   ctx.root.querySelectorAll(".sim-tools .tool[data-draw]").forEach((b) => b.onclick = () => {
-    if (b.dataset.draw === "text") return drawText();
+    if (b.dataset.draw === "text") return drawText(); // флаг ставится после ввода текста
+    const tool = TOOLS.find((t) => t.name === b.dataset.draw);
+    W.drawingActive = true;
+    W.drawingLeft = tool?.pts ?? 2;
+    hideOvBar();
     if (b.dataset.draw === "wave5" || b.dataset.draw === "waveABC")
       return W.chartApi.draw(b.dataset.draw, waveLevel());
     W.chartApi.draw(b.dataset.draw);
@@ -142,7 +169,7 @@ export function mountWork(ctx) {
     if (W.selectedOv) W.chartApi.restyleOverlay(W.selectedOv.id, { line: { style: b.dataset.ls } });
   });
   ovbar.querySelector(".ov-del").onclick = () => {
-    if (W.selectedOv) W.chartApi.removeDrawn(W.selectedOv.id);
+    if (W.selectedOv) { W.chartApi.removeDrawn(W.selectedOv.id); hideOvBar(); }
   };
 
   W.onResize = () => W.chartApi.resize();
@@ -153,6 +180,7 @@ export function mountWork(ctx) {
     if (e.code === "Space") { togglePlay(); e.preventDefault(); }
     if ((e.code === "Delete" || e.code === "Backspace") && W.selectedOv) {
       W.chartApi.removeDrawn(W.selectedOv.id);
+      hideOvBar();
       e.preventDefault();
     }
   };
@@ -167,7 +195,7 @@ const waveLevel = () =>
   Math.min(Math.max(Number(localStorage.getItem("sim-wave-level")) || 3, 1), 4);
 
 function showOvBar(id, name) {
-  if (!W) return;
+  if (!W || W.drawingActive) return;
   W.selectedOv = { id, name };
   const bar = W.ctx.root.querySelector("#sw-ovbar");
   if (!bar) return;
@@ -197,6 +225,9 @@ function drawText() {
     const t = inp.value.trim();
     if (!t) return;
     m.close();
+    W.drawingActive = true;
+    W.drawingLeft = 1;
+    hideOvBar();
     W.chartApi.draw("simpleAnnotation", t);
   };
 }
@@ -204,6 +235,14 @@ function drawText() {
 // ---------- Replay ----------
 
 const lastBar = () => W.ctx.candles[W.idx - 1];
+
+// Сессия пишется в базу лениво — при первой реальной сделке (пустые сессии не плодим)
+async function ensureSession() {
+  if (W.sessionId) return W.sessionId;
+  const s = await sapi.createSession(W.ctx.spec);
+  W.sessionId = s.id;
+  return s.id;
+}
 
 function next() {
   if (!W) return false;
@@ -251,7 +290,7 @@ function renderPanel() {
   const lev = Number(localStorage.getItem("sim-lev")) || 10;
   const defMargin = Math.max(1, Math.round(W.balance * 0.1));
   el.innerHTML = `
-    <h3>Торговля <span class="muted num">комиссия ${fmtRu(Number(W.ctx.session.fee_pct), 3)}%</span></h3>
+    <h3>Торговля <span class="muted num">комиссия ${fmtRu(Number(W.ctx.spec.fee_pct), 3)}%</span></h3>
     <div class="fld"><span>Плечо ×<b id="tp-levv" class="num">${lev}</b></span>
       <input id="tp-lev" type="range" min="1" max="100" step="1" value="${lev}">
       <div class="chips">${[1, 5, 10, 25, 50, 100].map((x) => `<button class="chip" data-lev="${x}">×${x}</button>`).join("")}</div>
@@ -385,7 +424,7 @@ function renderPosition(el) {
   const p = W.pos;
   const price = lastBar().close;
   const liq = eng.liqPrice(p);
-  const be = eng.breakevenPrice(p, Number(W.ctx.session.fee_pct));
+  const be = eng.breakevenPrice(p, Number(W.ctx.spec.fee_pct));
   el.innerHTML = `
     <h3>Позиция <span class="${p.side === "long" ? "pos" : "neg"}">${p.side === "long" ? "Лонг" : "Шорт"} ×${fmtRu(p.leverage, 0)}</span></h3>
     <div class="sim-posgrid num">
@@ -485,7 +524,7 @@ async function openTrade(side) {
   if (margin > W.balance) return notify("Маржа больше доступного баланса", "error");
   if (!(leverage >= 1 && leverage <= 100)) return notify("Плечо от 1 до 100", "error");
   const bar = lastBar();
-  const feePct = Number(W.ctx.session.fee_pct);
+  const feePct = Number(W.ctx.spec.fee_pct);
   const base = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
   const { tpPrice, slPrice } = tpSlFromPanel(base);
   const pos = { ...base, tpPrice, slPrice };
@@ -495,8 +534,9 @@ async function openTrade(side) {
   const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой и линиями (§5.4)
   let trade;
   try {
+    const sessionId = await ensureSession();
     trade = await sapi.insertSimTrade({
-      session_id: W.ctx.session.id, side, margin, leverage, qty: pos.qty,
+      session_id: sessionId, side, margin, leverage, qty: pos.qty,
       entry_ts: iso(pos.entryTs), entry_price: pos.entryPrice, fees: pos.entryFee,
       tp_price: tpPrice, sl_price: slPrice,
     });
@@ -514,7 +554,7 @@ async function closeTrade(reason, price, ts) {
   if (!W?.pos) return;
   const pos = W.pos;
   W.pos = null; // сразу, чтобы автоплей не закрыл дважды
-  const raw = eng.closePosition(pos, { price, ts, feePct: Number(W.ctx.session.fee_pct), reason });
+  const raw = eng.closePosition(pos, { price, ts, feePct: Number(W.ctx.spec.fee_pct), reason });
   const closed = reason === "liq" ? { ...raw, pnl: -pos.margin } : raw; // ликвидация сжигает маржу
 
   const shot = W.chartApi.screenshot(); // автоскрин выхода — линии позиции ещё на графике
@@ -551,8 +591,10 @@ async function endSession() {
     const b = lastBar();
     await closeTrade("end", b.close, b.timestamp);
   }
-  try { await sapi.finishSession(W.ctx.session.id); }
-  catch (e) { notify("Сессия не пометилась завершённой: " + e.message, "error", 6000); }
+  if (W.sessionId) {
+    try { await sapi.finishSession(W.sessionId); }
+    catch (e) { notify("Сессия не пометилась завершённой: " + e.message, "error", 6000); }
+  }
   cleanup();
 }
 

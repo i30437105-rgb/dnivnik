@@ -16,10 +16,57 @@ export function pricePrecision(p) {
 // ---------- Расширения: индикатор WWV и разметка волн (регистрируются один раз) ----------
 
 let extensionsReady = false;
+let shiftDown = false; // Shift при рисовании = строго горизонтальная линия (как в TradingView)
 
 function registerExtensions(k) {
   if (extensionsReady) return;
   extensionsReady = true;
+
+  window.addEventListener("keydown", (e) => { if (e.key === "Shift") shiftDown = true; });
+  window.addEventListener("keyup", (e) => { if (e.key === "Shift") shiftDown = false; });
+  window.addEventListener("blur", () => { shiftDown = false; });
+
+  // при зажатом Shift текущая точка прилипает по цене к другой точке линии
+  const shiftSnap = ({ points, performPointIndex, performPoint }) => {
+    const anchor = points[performPointIndex === 0 ? 1 : 0];
+    if (shiftDown && anchor?.value != null) performPoint.value = anchor.value;
+  };
+
+  // продолжение луча от точки a через b до края области графика
+  const extendToEdge = (a, b, bounding) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (dx === 0 && dy === 0) return b;
+    const ts = [];
+    if (dx > 0) ts.push((bounding.width - a.x) / dx);
+    if (dx < 0) ts.push(-a.x / dx);
+    if (dy > 0) ts.push((bounding.height - a.y) / dy);
+    if (dy < 0) ts.push(-a.y / dy);
+    const t = Math.min(...ts.filter((v) => v > 0));
+    return Number.isFinite(t) ? { x: a.x + dx * t, y: a.y + dy * t } : b;
+  };
+
+  // Трендовая и луч с поддержкой Shift (встроенные segment/rayLine хука снапа не дают)
+  k.registerOverlay({
+    name: "simSegment",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    performEventMoveForDrawing: shiftSnap,
+    performEventPressedMove: shiftSnap,
+    createPointFigures: ({ coordinates }) =>
+      coordinates.length > 1 ? [{ type: "line", attrs: { coordinates } }] : [],
+  });
+  k.registerOverlay({
+    name: "simRay",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    performEventMoveForDrawing: shiftSnap,
+    performEventPressedMove: shiftSnap,
+    createPointFigures: ({ coordinates, bounding }) => {
+      if (coordinates.length < 2) return [];
+      const [a, b] = coordinates;
+      return [{ type: "line", attrs: { coordinates: [a, extendToEdge(a, b, bounding)] } }];
+    },
+  });
 
   // WWV ATR 14 Close (Weis Wave Volume) — объём, накопленный по волнам движения цены;
   // волна разворачивается, когда close откатывает от экстремума волны больше ATR(14).
@@ -86,8 +133,9 @@ function registerExtensions(k) {
         // подпись над вершиной и под низом: сравниваем с соседними точками разметки
         const ys = [coordinates[i - 1]?.y, coordinates[i + 1]?.y].filter((v) => v != null);
         const above = ys.length ? c.y <= Math.min(...ys) : true;
+        // клики по подписи ловятся — так волну можно выделить, перекрасить, удалить
         return {
-          type: "text", ignoreEvent: true,
+          type: "text",
           attrs: {
             x: c.x, y: above ? c.y - 8 : c.y + 8, text: labels[i] ?? "",
             align: "center", baseline: above ? "bottom" : "top",
@@ -182,6 +230,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   chart.createIndicator({ name: "WWV", calcParams: [14] }, false, { id: "sim_wwv", height: 72 });
 
   const drawn = new Set();  // пользовательская разметка
+  let lastDrawn = null;     // оверлей, который сейчас рисуется (для finishDrawing)
   const posIds = [];        // линии открытой позиции
   const tpsl = { tp: null, sl: null }; // перетаскиваемые уровни
 
@@ -212,10 +261,62 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       const id = chart.createOverlay({
         name,
         ...(extendData != null ? { extendData } : {}),
-        onSelected: (e) => { hooks.onOverlaySelect?.(e.overlay.id, e.overlay.name); },
-        onDeselected: () => { hooks.onOverlayDeselect?.(); },
+        onDrawEnd: (e) => { if (lastDrawn === e.overlay.id) lastDrawn = null; },
       });
-      for (const i of [].concat(id)) if (i) drawn.add(i);
+      for (const i of [].concat(id)) if (i) { drawn.add(i); lastDrawn = i; }
+    },
+
+    // Принудительное завершение рисования: klinecharts сам завершает оверлей только
+    // лишним кликом — когда все точки поставлены, помечаем завершённым напрямую
+    finishDrawing() {
+      const id = lastDrawn;
+      lastDrawn = null;
+      if (!id) return;
+      const ov = chart.getOverlayById?.(id);
+      if (!ov?.points?.length) return;
+      // гасим «прогресс рисования» klinecharts, иначе следующие клики шагают призрака
+      ov.forceComplete?.();
+      try { chart.getChartStore?.().getOverlayStore?.().progressInstanceComplete?.(); }
+      catch { /* приватный путь может смениться в будущих версиях — не критично */ }
+    },
+
+    // Свой hit-test по клику: события кликов по фигурам в klinecharts ненадёжны,
+    // поэтому попадание в нарисованный объект ищем сами по расстоянию до его
+    // точек и отрезков между ними. Возвращает { id, name } или null.
+    hitTest(x, y) {
+      const d2seg = (px0, py0, a, b) => {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 ? Math.max(0, Math.min(1, ((px0 - a.x) * dx + (py0 - a.y) * dy) / len2)) : 0;
+        return Math.hypot(px0 - (a.x + dx * t), py0 - (a.y + dy * t));
+      };
+      let best = null;
+      let bestD = Infinity;
+      for (const id of drawn) {
+        const ov = chart.getOverlayById?.(id);
+        if (!ov?.points?.length) continue;
+        const tol = ov.name === "wave5" || ov.name === "waveABC" ? 24 : 12;
+        const cs = [].concat(chart.convertToPixel(
+          ov.points.map((p) => ({ timestamp: p.timestamp, dataIndex: p.dataIndex, value: p.value })),
+          { paneId: "candle_pane" },
+        )).filter((c) => c && Number.isFinite(c.x));
+        for (let i = 0; i < cs.length; i++) {
+          let d = Math.hypot(x - cs[i].x, y - cs[i].y);
+          // у горизонтали и луча зона — вся линия, не только точки
+          if (ov.name === "horizontalStraightLine") d = Math.min(d, Math.abs(y - cs[i].y));
+          if (i > 0 && ov.name !== "wave5" && ov.name !== "waveABC") {
+            d = Math.min(d, d2seg(x, y, cs[i - 1], cs[i]));
+          }
+          if (i > 0 && ov.name === "simRay") {
+            // продолжение луча за вторую точку
+            const a = cs[0], b = cs[1];
+            const far = { x: b.x + (b.x - a.x) * 100, y: b.y + (b.y - a.y) * 100 };
+            d = Math.min(d, d2seg(x, y, b, far));
+          }
+          if (d < tol && d < bestD) { bestD = d; best = { id, name: ov.name }; }
+        }
+      }
+      return best;
     },
     // Настройки выделенного инструмента: цвет/толщина/тип линии
     restyleOverlay(id, styles) { chart.overrideOverlay({ id, styles }); },

@@ -262,15 +262,16 @@ async function startSession(el) {
       toMs = fromMs + days * 864e5;
     }
     if (candles.length < 30) throw new Error("слишком мало свечей за период (нет данных по паре?)");
-    const session = await sapi.createSession({
+    status.textContent = "";
+    // сессия НЕ пишется в базу здесь — запись появится при первой реальной сделке
+    const spec = {
       account_id: account.id, symbol, timeframe: tfId,
       from_ts: new Date(fromMs).toISOString(), to_ts: new Date(toMs).toISOString(),
       random: mode === "random", fee_pct: fee, funding: false,
-    });
-    status.textContent = "";
+    };
     mountWork({
       root: root.querySelector("#sim-body"),
-      account, session, candles, tf,
+      account, spec, candles, tf,
       onBalance: (bal) => { account = { ...account, balance: bal }; },
       onExit: () => renderHome(),
     });

@@ -918,3 +918,6 @@ body.lightbox-open .side { display: none; }
 @media (max-width: 700px) {
   .sim-summary { grid-template-columns: 1fr 1fr; }
 }
+
+/* Симулятор: панель настроек инструмента — 12 цветов, перенос строк на узких экранах */
+.sim-ovbar { flex-wrap: wrap; justify-content: center; max-width: min(92%, 560px); }
