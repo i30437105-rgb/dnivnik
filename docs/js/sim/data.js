@@ -13,6 +13,32 @@ export const TIMEFRAMES = [
 ];
 export const tfById = (id) => TIMEFRAMES.find((t) => t.id === id) ?? TIMEFRAMES[0];
 
+// Агрегация баров младшего ТФ в старший (bucket по UTC — как дневки Bybit).
+// Последний бар получается частично сформированным — без подглядывания в будущее.
+export function aggregateBars(bars, tfMs) {
+  const out = [];
+  let cur = null;
+  for (const b of bars) {
+    const start = Math.floor(b.timestamp / tfMs) * tfMs;
+    if (!cur || cur.timestamp !== start) {
+      if (cur) out.push(cur);
+      cur = { timestamp: start, open: b.open, high: b.high, low: b.low, close: b.close,
+              volume: b.volume ?? 0, turnover: b.turnover ?? 0 };
+    } else {
+      cur = {
+        ...cur,
+        high: Math.max(cur.high, b.high),
+        low: Math.min(cur.low, b.low),
+        close: b.close,
+        volume: cur.volume + (b.volume ?? 0),
+        turnover: cur.turnover + (b.turnover ?? 0),
+      };
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 async function bybit(path, params) {
   const qs = new URLSearchParams(params).toString();
   const res = await fetch(`${API}/${path}?${qs}`);

@@ -4,6 +4,7 @@
 import { esc, fmtRu, fmtDT, notify, confirmToast, openModal } from "../util.js";
 import * as eng from "./engine.js";
 import * as sapi from "./simapi.js";
+import { TIMEFRAMES, tfById, aggregateBars, loadKlines } from "./data.js";
 import { createSimChart, pricePrecision } from "./chart.js";
 
 let W = null;
@@ -40,6 +41,8 @@ export function mountWork(ctx) {
     balance: Number(ctx.account.balance),
     dataEnded: false,
     chartApi: null,
+    viewTf: ctx.tf.id, // ТФ отображения; replay всегда шагает торговым ТФ
+    pastBars: {},      // догруженная история старших ТФ до начала сессии
   };
 
   ctx.root.innerHTML = `
@@ -49,6 +52,10 @@ export function mountWork(ctx) {
           <div class="seg" id="sw-type">
             <button class="btn on" data-ct="bars">Бары</button>
             <button class="btn" data-ct="candles">Свечи</button>
+          </div>
+          <div class="seg" id="sw-vtf" title="Таймфрейм отображения — старшие собираются из торгового без подглядывания в будущее">
+            ${TIMEFRAMES.filter((t) => t.ms >= ctx.tf.ms).map((t) =>
+              `<button class="btn ${t.id === ctx.tf.id ? "on" : ""}" data-vtf="${t.id}">${t.label}</button>`).join("")}
           </div>
           <div class="sim-tools">
             ${TOOLS.map((t) => `<button class="tool" data-draw="${t.name}" title="${t.title}">${t.icon}</button>`).join("")}
@@ -133,6 +140,7 @@ export function mountWork(ctx) {
     ctx.root.querySelectorAll("#sw-type .btn").forEach((x) => x.classList.toggle("on", x === b));
     W.chartApi.setType(b.dataset.ct);
   });
+  ctx.root.querySelectorAll("#sw-vtf .btn").forEach((b) => b.onclick = () => switchViewTf(b.dataset.vtf));
   ctx.root.querySelectorAll(".sim-tools .tool[data-draw]").forEach((b) => b.onclick = () => {
     if (b.dataset.draw === "text") return drawText(); // флаг ставится после ввода текста
     const tool = TOOLS.find((t) => t.name === b.dataset.draw);
@@ -236,6 +244,46 @@ function drawText() {
 
 const lastBar = () => W.ctx.candles[W.idx - 1];
 
+// ---------- Таймфрейм отображения ----------
+// Старшие ТФ агрегируются из «прожитых» баров торгового ТФ (без будущего);
+// история до старта сессии догружается с Bybit — это прошлое, подглядывания нет.
+
+async function switchViewTf(tfId) {
+  if (!W || tfId === W.viewTf) return;
+  W.viewTf = tfId;
+  W.ctx.root.querySelectorAll("#sw-vtf .btn").forEach((x) =>
+    x.classList.toggle("on", x.dataset.vtf === tfId));
+  await ensurePast(tfId);
+  if (W?.viewTf === tfId) refreshView();
+}
+
+async function ensurePast(tfId) {
+  if (tfId === W.ctx.tf.id || W.pastBars[tfId]) return;
+  const vtf = tfById(tfId);
+  const sessionStart = W.ctx.candles[0].timestamp;
+  const firstBucket = Math.floor(sessionStart / vtf.ms) * vtf.ms;
+  try {
+    const past = await loadKlines(W.ctx.spec.symbol, tfId,
+      firstBucket - 300 * vtf.ms, firstBucket - 1);
+    // бар, в который попадает старт сессии, собираем агрегатом — иначе в нём будущее
+    W.pastBars[tfId] = past.filter((b) => b.timestamp < firstBucket);
+  } catch {
+    W.pastBars[tfId] = []; // без истории тоже работает — только сессионные бары
+  }
+}
+
+function viewBars() {
+  const live = W.ctx.candles.slice(0, W.idx);
+  if (W.viewTf === W.ctx.tf.id) return live;
+  const vtf = tfById(W.viewTf);
+  return [...(W.pastBars[W.viewTf] ?? []), ...aggregateBars(live, vtf.ms)];
+}
+
+function refreshView() {
+  W.chartApi.setBars(viewBars());
+  updateTicker();
+}
+
 // Сессия пишется в базу лениво — при первой реальной сделке (пустые сессии не плодим)
 async function ensureSession() {
   if (W.sessionId) return W.sessionId;
@@ -249,7 +297,22 @@ function next() {
   if (W.idx >= W.ctx.candles.length) { endOfData(); return false; }
   const bar = W.ctx.candles[W.idx];
   W.idx += 1;
-  W.chartApi.pushBar(bar);
+  if (W.viewTf === W.ctx.tf.id) {
+    W.chartApi.pushBar(bar);
+  } else {
+    // старший вид: дорисовываем текущий бар старшего ТФ из баров его bucket'а
+    const vtf = tfById(W.viewTf);
+    const start = Math.floor(bar.timestamp / vtf.ms) * vtf.ms;
+    const acc = [];
+    for (let i = W.idx - 1; i >= 0; i--) {
+      const c = W.ctx.candles[i];
+      if (Math.floor(c.timestamp / vtf.ms) * vtf.ms !== start) break;
+      acc.push(c);
+    }
+    acc.reverse();
+    const agg = aggregateBars(acc, vtf.ms)[0];
+    if (agg) W.chartApi.pushBar(agg);
+  }
   if (W.pos) {
     const exit = eng.checkExit(W.pos, bar); // SL/TP/ликвидация по high/low бара (§6.3)
     if (exit) closeTrade(exit.reason, exit.price, bar.timestamp);
