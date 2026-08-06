@@ -872,3 +872,9 @@ body.lightbox-open .side { display: none; }
   #sim-chart { height: 44vh; }
   .sim-chartbar .sim-sym { display: none; }
 }
+
+/* Симулятор: кнопки волновой разметки и высота графика с двумя панелями индикаторов */
+.tool .tld { font-size: 9.5px; font-weight: 700; letter-spacing: .02em; }
+#sim-chart { height: 580px; }
+@media (max-width: 1100px) { #sim-chart { height: 54vh; } }
+@media (max-width: 700px) { #sim-chart { height: 50vh; } }

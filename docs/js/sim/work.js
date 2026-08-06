@@ -25,7 +25,9 @@ const TOOLS = [
   { name: "rayLine", title: "Луч", icon: svg('<path d="M5 19 17 7"/><path d="M13.5 5.5H18.5V10.5"/><circle cx="5" cy="19" r="1.6"/>') },
   { name: "horizontalStraightLine", title: "Горизонтальный уровень", icon: svg('<path d="M4 12h16"/><circle cx="12" cy="12" r="1.6"/>') },
   { name: "fibonacciLine", title: "Фибо-ретрейсмент", icon: svg('<path d="M4 6h16M4 12h16M4 18h16"/>') },
-  { name: "text", title: "Текст (подпись волны)", icon: svg('<path d="M6 6h12M12 6v12"/>', 2) },
+  { name: "wave5", title: "Пятиволновка: 6 кликов по вершинам — (0) 1 2 3 4 5", icon: '<span class="tld">1-5</span>' },
+  { name: "waveABC", title: "Коррекция: 4 клика по вершинам — (0) A B C", icon: '<span class="tld">ABC</span>' },
+  { name: "text", title: "Текст (свободная подпись)", icon: svg('<path d="M6 6h12M12 6v12"/>', 2) },
 ];
 
 export function mountWork(ctx) {

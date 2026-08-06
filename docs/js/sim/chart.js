@@ -13,9 +13,88 @@ export function pricePrecision(p) {
   return 8;
 }
 
+// ---------- Расширения: индикатор WWV и разметка волн (регистрируются один раз) ----------
+
+let extensionsReady = false;
+
+function registerExtensions(k) {
+  if (extensionsReady) return;
+  extensionsReady = true;
+
+  // WWV ATR 14 Close (Weis Wave Volume) — объём, накопленный по волнам движения цены;
+  // волна разворачивается, когда close откатывает от экстремума волны больше ATR(14).
+  k.registerIndicator({
+    name: "WWV",
+    shortName: "WWV ATR 14",
+    calcParams: [14],
+    figures: [{
+      key: "wave", title: "Волна: ", type: "bar", baseValue: 0,
+      styles: ({ current }) => ({
+        color: (current?.dir ?? 1) > 0 ? "rgba(76,196,122,.55)" : "rgba(240,85,63,.5)",
+      }),
+    }],
+    calc: (list, { calcParams }) => {
+      const period = calcParams[0] ?? 14;
+      let atr = 0;
+      let dir = 0;
+      let extreme = null;
+      let vol = 0;
+      return list.map((b, i) => {
+        const prevClose = i ? list[i - 1].close : b.close;
+        const tr = Math.max(b.high - b.low, Math.abs(b.high - prevClose), Math.abs(b.low - prevClose));
+        atr = i === 0 ? tr : (atr * (period - 1) + tr) / period; // RMA Уайлдера
+        if (dir === 0) { dir = b.close >= prevClose ? 1 : -1; extreme = b.close; }
+        if (dir > 0) {
+          if (b.close > extreme) extreme = b.close;
+          if (atr > 0 && extreme - b.close >= atr) { dir = -1; extreme = b.close; vol = 0; }
+        } else {
+          if (b.close < extreme) extreme = b.close;
+          if (atr > 0 && b.close - extreme >= atr) { dir = 1; extreme = b.close; vol = 0; }
+        }
+        vol += b.volume ?? 0;
+        return { wave: vol, dir };
+      });
+    },
+  });
+
+  // Разметка волн: клики по вершинам — пунктир между точками + подписи (0) 1 2 3 4 5 / A B C
+  const waveOverlay = (name, labels) => ({
+    name,
+    totalStep: labels.length + 1,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates }) => {
+      const figs = [];
+      if (coordinates.length > 1) {
+        figs.push({ type: "line", attrs: { coordinates }, styles: { style: "dashed" } });
+      }
+      coordinates.forEach((c, i) => {
+        const prev = coordinates[i - 1];
+        const above = prev ? c.y <= prev.y : true; // подпись со стороны вершины
+        figs.push({
+          type: "text", ignoreEvent: true,
+          attrs: {
+            x: c.x, y: above ? c.y - 8 : c.y + 8, text: labels[i] ?? "",
+            align: "center", baseline: above ? "bottom" : "top",
+          },
+          styles: {
+            color: css("--accent-text") || "#b598fb", size: 13, weight: 600,
+            backgroundColor: "rgba(19,17,16,.72)",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+            borderRadius: 4,
+          },
+        });
+      });
+      return figs;
+    },
+  });
+  k.registerOverlay(waveOverlay("wave5", ["(0)", "1", "2", "3", "4", "5"]));
+  k.registerOverlay(waveOverlay("waveABC", ["(0)", "A", "B", "C"]));
+}
+
 export function createSimChart(el) {
   const k = window.klinecharts;
   if (!k) throw new Error("Библиотека графика не загрузилась — проверьте интернет");
+  registerExtensions(k);
   try {
     k.registerLocale("ru-RU", {
       time: "Время: ", open: "Откр: ", high: "Макс: ", low: "Мин: ",
@@ -68,8 +147,9 @@ export function createSimChart(el) {
     },
   });
   try { chart.setTimezone(state.tz); } catch { /* не критично */ }
-  // Объём без MA-линий — чистая гистограмма
-  chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: 84 });
+  // Объём без MA-линий — чистая гистограмма; под ним WWV ATR 14 (как на Bybit у Ивана)
+  chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: 72 });
+  chart.createIndicator({ name: "WWV", calcParams: [14] }, false, { id: "sim_wwv", height: 72 });
 
   const drawn = new Set();  // пользовательская разметка
   const posIds = [];        // линии открытой позиции
