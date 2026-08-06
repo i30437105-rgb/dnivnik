@@ -15,7 +15,7 @@ const money = (v) => `${v < 0 ? "−" : ""}$${fmtRu(Math.abs(Number(v) || 0), 2)
 const px = (v, ref) => fmtRu(v, pricePrecision(ref ?? v));
 const iso = (ms) => new Date(ms).toISOString();
 const SPEED_MS = { 1: 1000, 5: 200, 20: 50, 100: 10 };
-const REASON_RU = { manual: "вручную", liq: "ликвидация", end: "конец сессии" };
+const REASON_RU = { manual: "вручную", tp: "тейк-профит", sl: "стоп-лосс", liq: "ликвидация", end: "конец сессии" };
 const WARMUP = 60; // видимых баров на старте — разгон перед торговлей
 
 const svg = (paths, sw = 1.8) =>
@@ -93,7 +93,8 @@ export function mountWork(ctx) {
   W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
     onOverlaySelect: (id, name) => showOvBar(id, name),
     onOverlayDeselect: () => hideOvBar(),
-  });
+    onTpSlDrag: (kind, price) => applyTpSl(kind, price, "drag"),
+  }, { hideTime: !!ctx.session.random });
   W.chartApi.setBars(ctx.candles.slice(0, W.idx));
 
   const $ = (s) => ctx.root.querySelector(s);
@@ -211,8 +212,8 @@ function next() {
   W.idx += 1;
   W.chartApi.pushBar(bar);
   if (W.pos) {
-    const liqPx = eng.checkLiquidation(W.pos, bar);
-    if (liqPx != null) closeTrade("liq", liqPx, bar.timestamp);
+    const exit = eng.checkExit(W.pos, bar); // SL/TP/ликвидация по high/low бара (§6.3)
+    if (exit) closeTrade(exit.reason, exit.price, bar.timestamp);
   }
   updateTicker();
   return true;
@@ -259,6 +260,16 @@ function renderPanel() {
       <input id="tp-margin" type="number" min="0" step="any" value="${defMargin}" inputmode="decimal"></label>
     <div class="chips">${[5, 10, 25, 50].map((p) => `<button class="chip" data-mpct="${p}">${p}%</button>`).join("")}</div>
     <div class="sim-preview num" id="tp-preview"></div>
+    <label class="sim-tpslchk"><input type="checkbox" id="tp-tpsl"> TP / SL</label>
+    <div id="tp-tpslbox" class="sim-tpslbox num" hidden>
+      <div class="tprow"><span class="lbl pos">TP</span>
+        <input id="tp-tpp" type="number" step="any" min="0" placeholder="цена" inputmode="decimal">
+        <input id="tp-tpr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"></div>
+      <div class="tprow"><span class="lbl neg">SL</span>
+        <input id="tp-slp" type="number" step="any" min="0" placeholder="цена" inputmode="decimal">
+        <input id="tp-slr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"></div>
+      <div class="muted tphint">% — ROI от маржи, как на Bybit. Цена уточняется по стороне при входе.</div>
+    </div>
     <div class="row sim-openrow">
       <button id="tp-long" class="btn buy">Открыть Лонг</button>
       <button id="tp-short" class="btn sell">Открыть Шорт</button>
@@ -278,9 +289,79 @@ function renderPanel() {
     mInp.value = String(Math.floor(W.balance * Number(c.dataset.mpct)) / 100);
     updatePreview();
   });
+
+  // TP/SL до входа: цена ↔ ROI% (пересчёт от текущей цены; последний ввод — источник истины)
+  W.tpslSrc = { tp: "roi", sl: "roi" };
+  el.querySelector("#tp-tpsl").onchange = (e) => {
+    el.querySelector("#tp-tpslbox").hidden = !e.target.checked;
+  };
+  const bindPair = (kind, sign) => {
+    const p = el.querySelector(`#tp-${kind}p`);
+    const r = el.querySelector(`#tp-${kind}r`);
+    const lev = () => Number(el.querySelector("#tp-lev").value) || 1;
+    p.oninput = () => {
+      W.tpslSrc[kind] = "price";
+      const v = Number(p.value);
+      const entry = lastBar().close;
+      r.value = v > 0 ? Math.abs((v / entry - 1) * lev() * 100).toFixed(1) : "";
+    };
+    r.oninput = () => {
+      W.tpslSrc[kind] = "roi";
+      const v = Number(r.value);
+      const entry = lastBar().close;
+      p.value = v > 0 ? String(+(entry * (1 + sign * v / (100 * lev()))).toFixed(2)) : "";
+    };
+  };
+  bindPair("tp", 1);  // превью считается от лонга; при входе пересчёт по факту стороны
+  bindPair("sl", -1);
+
   el.querySelector("#tp-long").onclick = () => openTrade("long");
   el.querySelector("#tp-short").onclick = () => openTrade("short");
   updatePreview();
+}
+
+// TP/SL из полей панели по факту стороны: roi-ввод пересчитывается, цена берётся как есть
+function tpSlFromPanel(pos) {
+  const el = W.ctx.root;
+  if (!el.querySelector("#tp-tpsl")?.checked) return { tpPrice: null, slPrice: null };
+  const out = { tpPrice: null, slPrice: null };
+  for (const [kind, roiSign] of [["tp", 1], ["sl", -1]]) {
+    const pv = Number(el.querySelector(`#tp-${kind}p`)?.value);
+    const rv = Number(el.querySelector(`#tp-${kind}r`)?.value);
+    let price = null;
+    if (W.tpslSrc[kind] === "price" && pv > 0) price = pv;
+    else if (rv > 0) price = eng.priceFromRoi(pos, roiSign * rv);
+    if (price == null) continue;
+    const valid = kind === "tp"
+      ? (pos.side === "long" ? price > pos.entryPrice : price < pos.entryPrice)
+      : (pos.side === "long" ? price < pos.entryPrice : price > pos.entryPrice);
+    if (!valid) { notify(`${kind.toUpperCase()} не на той стороне от входа — уровень не поставлен`, "error", 6000); continue; }
+    out[kind === "tp" ? "tpPrice" : "slPrice"] = price;
+  }
+  return out;
+}
+
+// Применение нового уровня TP/SL к открытой позиции (поля позиции или перетаскивание линии)
+async function applyTpSl(kind, price, source) {
+  if (!W?.pos) return;
+  const pos = W.pos;
+  if (price != null) {
+    const valid = kind === "tp"
+      ? (pos.side === "long" ? price > pos.entryPrice : price < pos.entryPrice)
+      : (pos.side === "long" ? price < pos.entryPrice : price > pos.entryPrice);
+    if (!valid) {
+      notify(`${kind.toUpperCase()} должен быть ${kind === "tp" ? "в прибыльной" : "в убыточной"} стороне от входа`, "error", 5000);
+      W.chartApi.setTpSl({ tp: pos.tpPrice ?? null, sl: pos.slPrice ?? null }); // вернуть линию
+      if (source !== "drag") renderPanel();
+      return;
+    }
+  }
+  W.pos = { ...pos, [kind === "tp" ? "tpPrice" : "slPrice"]: price };
+  W.chartApi.setTpSl({ tp: W.pos.tpPrice ?? null, sl: W.pos.slPrice ?? null });
+  renderPanel();
+  try {
+    await sapi.updateSimTrade(pos.tradeId, { [kind === "tp" ? "tp_price" : "sl_price"]: price });
+  } catch (e) { notify("Уровень не сохранился: " + e.message, "error", 6000); }
 }
 
 function updatePreview() {
@@ -317,11 +398,48 @@ function renderPosition(el) {
       <div><span class="lbl">НМ PnL</span><span id="pp-upnl">—</span></div>
       <div><span class="lbl">ROI</span><span id="pp-roi">—</span></div>
     </div>
+    <div class="sim-tpslbox num">
+      <div class="tprow"><span class="lbl pos">TP</span>
+        <input id="ps-tpp" type="number" step="any" min="0" placeholder="цена" inputmode="decimal"
+          value="${p.tpPrice != null ? +p.tpPrice.toFixed(2) : ""}">
+        <input id="ps-tpr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"
+          value="${p.tpPrice != null ? Math.abs(eng.roiFromPrice(p, p.tpPrice)).toFixed(1) : ""}">
+        <button class="ovb" id="ps-tpx" title="Убрать TP">✕</button></div>
+      <div class="tprow"><span class="lbl neg">SL</span>
+        <input id="ps-slp" type="number" step="any" min="0" placeholder="цена" inputmode="decimal"
+          value="${p.slPrice != null ? +p.slPrice.toFixed(2) : ""}">
+        <input id="ps-slr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"
+          value="${p.slPrice != null ? Math.abs(eng.roiFromPrice(p, p.slPrice)).toFixed(1) : ""}">
+        <button class="ovb" id="ps-slx" title="Убрать SL">✕</button></div>
+      <div class="muted tphint">уровни можно таскать прямо на графике</div>
+    </div>
     <button id="pp-close" class="btn primary sim-closebtn">Закрыть по рынку</button>`;
   el.querySelector("#pp-close").onclick = () => {
     const b = lastBar();
     closeTrade("manual", b.close, b.timestamp);
   };
+  // TP/SL позиции: цена ↔ ROI% с пересчётом, применение по завершении ввода
+  for (const [kind, roiSign] of [["tp", 1], ["sl", -1]]) {
+    const pInp = el.querySelector(`#ps-${kind}p`);
+    const rInp = el.querySelector(`#ps-${kind}r`);
+    pInp.oninput = () => {
+      const v = Number(pInp.value);
+      rInp.value = v > 0 ? Math.abs(eng.roiFromPrice(p, v)).toFixed(1) : "";
+    };
+    rInp.oninput = () => {
+      const v = Number(rInp.value);
+      pInp.value = v > 0 ? String(+eng.priceFromRoi(p, roiSign * v).toFixed(2)) : "";
+    };
+    pInp.onchange = () => {
+      const v = Number(pInp.value);
+      applyTpSl(kind, v > 0 ? v : null, "field");
+    };
+    rInp.onchange = () => {
+      const v = Number(rInp.value);
+      applyTpSl(kind, v > 0 ? eng.priceFromRoi(p, roiSign * v) : null, "field");
+    };
+    el.querySelector(`#ps-${kind}x`).onclick = () => applyTpSl(kind, null, "field");
+  }
   updateTicker();
 }
 
@@ -368,15 +486,19 @@ async function openTrade(side) {
   if (!(leverage >= 1 && leverage <= 100)) return notify("Плечо от 1 до 100", "error");
   const bar = lastBar();
   const feePct = Number(W.ctx.session.fee_pct);
-  const pos = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
+  const base = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
+  const { tpPrice, slPrice } = tpSlFromPanel(base);
+  const pos = { ...base, tpPrice, slPrice };
 
   W.chartApi.showPosition({ side, entryPrice: pos.entryPrice, entryTs: pos.entryTs, liq: eng.liqPrice(pos) });
+  W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
   const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой и линиями (§5.4)
   let trade;
   try {
     trade = await sapi.insertSimTrade({
       session_id: W.ctx.session.id, side, margin, leverage, qty: pos.qty,
       entry_ts: iso(pos.entryTs), entry_price: pos.entryPrice, fees: pos.entryFee,
+      tp_price: tpPrice, sl_price: slPrice,
     });
   } catch (e) {
     W.chartApi.hidePosition();

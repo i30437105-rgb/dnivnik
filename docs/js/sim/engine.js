@@ -41,16 +41,40 @@ export function closePosition(pos, { price, ts, feePct, reason }) {
   };
 }
 
-// Проверка бара на ликвидацию открытой позиции: пересёк ли экстремум цену ликвидации.
-// Возвращает цену исполнения или null. Гэп через уровень — по открытию бара (§6.3).
-export function checkLiquidation(pos, bar) {
-  const lp = liqPrice(pos);
-  if (pos.side === "long") {
-    if (bar.open <= lp) return bar.open;
-    if (bar.low <= lp) return lp;
-  } else {
-    if (bar.open >= lp) return bar.open;
-    if (bar.high >= lp) return lp;
+// ---------- TP/SL: цена ↔ % (ROI от маржи, как на Bybit) ----------
+
+export function priceFromRoi(pos, roiPctVal) {
+  return pos.entryPrice * (1 + dirOf(pos.side) * roiPctVal / (100 * pos.leverage));
+}
+
+export function roiFromPrice(pos, price) {
+  return (price / pos.entryPrice - 1) * dirOf(pos.side) * pos.leverage * 100;
+}
+
+// Проверка бара на выход открытой позиции: SL / TP / ликвидация (§6.3, §6.4).
+// Оба уровня в одном баре — консервативно первым срабатывает стоп.
+// Гэп через уровень — исполнение по открытию бара.
+// Возвращает { price, reason: 'tp'|'sl'|'liq' } или null.
+export function checkExit(pos, bar) {
+  const d = dirOf(pos.side);
+  const liq = liqPrice(pos);
+  // защитный уровень ближе к входу срабатывает первым: SL обычно до ликвидации
+  const stops = [
+    pos.slPrice != null ? { price: pos.slPrice, reason: "sl" } : null,
+    { price: liq, reason: "liq" },
+  ].filter(Boolean);
+  const stop = stops.reduce((a, b) => (d > 0 ? (b.price > a.price ? b : a) : (b.price < a.price ? b : a)));
+
+  const stopHit = d > 0
+    ? (bar.open <= stop.price ? bar.open : bar.low <= stop.price ? stop.price : null)
+    : (bar.open >= stop.price ? bar.open : bar.high >= stop.price ? stop.price : null);
+  if (stopHit != null) return { price: stopHit, reason: stop.reason };
+
+  if (pos.tpPrice != null) {
+    const tpHit = d > 0
+      ? (bar.open >= pos.tpPrice ? bar.open : bar.high >= pos.tpPrice ? pos.tpPrice : null)
+      : (bar.open <= pos.tpPrice ? bar.open : bar.low <= pos.tpPrice ? pos.tpPrice : null);
+    if (tpHit != null) return { price: tpHit, reason: "tp" };
   }
   return null;
 }

@@ -395,3 +395,7 @@ begin
     execute format('create policy "auth all %1$s" on %1$I for all to authenticated using (true) with check (true)', t);
   end loop;
 end $$;
+
+-- Симулятор, этап 2: несколько независимых счетов (у каждого своя стратегия);
+-- эпохи одного счёта связаны общим name
+alter table sim_accounts add column if not exists name text not null default 'Счёт 1';

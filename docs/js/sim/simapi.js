@@ -4,18 +4,34 @@ import { sb } from "../supa.js";
 
 // ---------- Счёт (эпохи) ----------
 
-export async function loadActiveAccount() {
+// Несколько независимых счетов (под разные стратегии); эпохи связаны общим name
+export async function loadActiveAccounts() {
   const { data, error } = await sb.from("sim_accounts").select("*")
-    .is("closed_at", null).order("id", { ascending: false }).limit(1).maybeSingle();
+    .is("closed_at", null).order("id");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function createAccount(name, deposit) {
+  const { data, error } = await sb.from("sim_accounts")
+    .insert({ name, start_deposit: deposit, balance: deposit }).select().single();
   if (error) throw new Error(error.message);
   return data;
 }
 
-export async function createAccount(deposit) {
-  const { data, error } = await sb.from("sim_accounts")
-    .insert({ start_deposit: deposit, balance: deposit }).select().single();
+// Прошлые эпохи счёта с этим именем (после обнулений)
+export async function loadEpochs(name) {
+  const { data, error } = await sb.from("sim_accounts").select("*")
+    .eq("name", name).not("closed_at", "is", null).order("id", { ascending: false });
   if (error) throw new Error(error.message);
-  return data;
+  return data ?? [];
+}
+
+export async function loadSessions(accountId) {
+  const { data, error } = await sb.from("sim_sessions").select("*")
+    .eq("account_id", accountId).order("id", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 // Обнуление: закрываем эпоху (история остаётся), новую создаёт createAccount
@@ -61,9 +77,20 @@ export async function insertSimTrade(row) {
   return data;
 }
 
-export async function closeSimTrade(id, patch) {
+export async function updateSimTrade(id, patch) {
   const { error } = await sb.from("sim_trades").update(patch).eq("id", id);
   if (error) throw new Error(error.message);
+}
+export const closeSimTrade = updateSimTrade;
+
+// Все сделки счёта — для статистики (эквити, PF, просадка, фильтры)
+export async function loadAllTrades(accountId, limit = 1000) {
+  const { data, error } = await sb.from("sim_trades")
+    .select("*, sim_sessions!inner(account_id, symbol, timeframe)")
+    .eq("sim_sessions.account_id", accountId)
+    .order("id", { ascending: true }).limit(limit);
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 // Последние сделки счёта (для списка на этапе 1; полная статистика — этап 2)

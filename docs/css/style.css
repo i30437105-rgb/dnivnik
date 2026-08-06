@@ -895,3 +895,26 @@ body.lightbox-open .side { display: none; }
 .sim-ovbar .ov-del { color: var(--neg); border-color: var(--neg-bd); }
 .sim-ovbar .ovdiv { width: 1px; height: 18px; background: var(--border); }
 .sim-ovbar.textonly .lineonly { display: none; }
+
+/* Симулятор, этап 2: мультисчета, TP/SL, статистика */
+.sim-accbar { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+.sim-accbar .chip { padding: 8px 14px; font-weight: 600; }
+.sim-tpslchk { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: var(--fs-13); color: var(--text-2); cursor: pointer; }
+.sim-tpslchk input { accent-color: var(--accent); width: 15px; height: 15px; }
+.sim-tpslbox { display: flex; flex-direction: column; gap: 7px; margin-top: 10px;
+  background: var(--bg-inset); border: 1px solid var(--border-hair); border-radius: 10px;
+  padding: 10px 12px; }
+.sim-tpslbox .tprow { display: grid; grid-template-columns: 26px 1fr 1fr auto; gap: 7px;
+  align-items: center; }
+.sim-tpslbox .tprow .lbl { font-size: 11px; font-weight: 700; }
+.sim-tpslbox input { min-width: 0; }
+.sim-tpslbox .tphint { font-size: 10.5px; }
+.sim-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px;
+  margin-bottom: 14px; }
+.sim-summary .stc { display: flex; flex-direction: column; gap: 4px; font-size: 15px;
+  font-weight: 600; }
+.sim-equity { margin: 6px 0 4px; }
+@media (max-width: 700px) {
+  .sim-summary { grid-template-columns: 1fr 1fr; }
+}

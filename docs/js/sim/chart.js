@@ -106,8 +106,10 @@ function registerExtensions(k) {
   k.registerOverlay(waveOverlay("waveABC"));
 }
 
-// hooks: onOverlaySelect(id, name) / onOverlayDeselect() — панель настроек инструмента в UI
-export function createSimChart(el, hooks = {}) {
+// hooks: onOverlaySelect(id, name) / onOverlayDeselect() — панель настроек инструмента;
+// onTpSlDrag(kind, price) — перетаскивание уровня TP/SL за линию.
+// opts.hideTime — режим «случайная точка»: ось времени и время в тултипе скрыты.
+export function createSimChart(el, hooks = {}, opts = {}) {
   const k = window.klinecharts;
   if (!k) throw new Error("Библиотека графика не загрузилась — проверьте интернет");
   registerExtensions(k);
@@ -163,12 +165,37 @@ export function createSimChart(el, hooks = {}) {
     },
   });
   try { chart.setTimezone(state.tz); } catch { /* не критично */ }
+  if (opts.hideTime) {
+    // случайная точка: дата скрыта до конца сессии — без оси времени и «Время» в тултипе
+    chart.setStyles({
+      xAxis: { tickText: { show: false } },
+      crosshair: { vertical: { text: { show: false } } },
+      candle: { tooltip: { custom: [
+        { title: "Откр: ", value: "{open}" }, { title: "Макс: ", value: "{high}" },
+        { title: "Мин: ", value: "{low}" }, { title: "Закр: ", value: "{close}" },
+        { title: "Объём: ", value: "{volume}" },
+      ] } },
+    });
+  }
   // Объём без MA-линий — чистая гистограмма; под ним WWV ATR 14 (как на Bybit у Ивана)
   chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: 72 });
   chart.createIndicator({ name: "WWV", calcParams: [14] }, false, { id: "sim_wwv", height: 72 });
 
   const drawn = new Set();  // пользовательская разметка
   const posIds = [];        // линии открытой позиции
+  const tpsl = { tp: null, sl: null }; // перетаскиваемые уровни
+
+  const tpslLine = (kind, value) => chart.createOverlay({
+    name: "priceLine", points: [{ value }],
+    styles: {
+      line: { color: kind === "tp" ? up : down, style: "dashed" },
+      text: { backgroundColor: kind === "tp" ? up : down, color: "#fff" },
+    },
+    onPressedMoveEnd: (e) => {
+      const v = e.overlay.points?.[0]?.value;
+      if (v != null) hooks.onTpSlDrag?.(kind, v);
+    },
+  });
 
   return {
     chart,
@@ -224,6 +251,21 @@ export function createSimChart(el, hooks = {}) {
     },
     hidePosition() {
       for (const id of posIds.splice(0)) if (id) chart.removeOverlay({ id });
+      this.setTpSl({ tp: null, sl: null });
+    },
+
+    // Линии TP/SL: создать/подвинуть/убрать; таскаются мышью (onTpSlDrag)
+    setTpSl({ tp, sl }) {
+      for (const [kind, value] of [["tp", tp], ["sl", sl]]) {
+        if (value == null && tpsl[kind]) {
+          chart.removeOverlay({ id: tpsl[kind] });
+          tpsl[kind] = null;
+        } else if (value != null && !tpsl[kind]) {
+          tpsl[kind] = tpslLine(kind, value);
+        } else if (value != null && tpsl[kind]) {
+          chart.overrideOverlay({ id: tpsl[kind], points: [{ value }] });
+        }
+      }
     },
 
     // Автоскрин: график с разметкой и линиями позиции (техдок §5.4)
