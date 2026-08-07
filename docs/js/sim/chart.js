@@ -4,6 +4,14 @@ import { state } from "../util.js";
 
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
+// hex -> rgba с заданной прозрачностью (для заливок)
+export const withAlpha = (hex, a) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+};
+
 // Точность цены по её порядку (у Bybit тик у всех разный — берём разумное приближение)
 export function pricePrecision(p) {
   if (p >= 10000) return 1;
@@ -65,6 +73,53 @@ function registerExtensions(k) {
       if (coordinates.length < 2) return [];
       const [a, b] = coordinates;
       return [{ type: "line", attrs: { coordinates: [a, extendToEdge(a, b, bounding)] } }];
+    },
+  });
+
+  // Свободный комментарий (как в TradingView): перетаскивается, редактируется
+  // по двойному клику, настраиваются цвет текста, заливка и её прозрачность
+  k.registerOverlay({
+    name: "simText",
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ overlay, coordinates }) => {
+      const c = coordinates[0];
+      if (!c) return [];
+      const st = overlay.styles?.text ?? {};
+      return [{
+        type: "text",
+        attrs: { x: c.x, y: c.y - 4, text: String(overlay.extendData ?? ""), align: "center", baseline: "bottom" },
+        styles: {
+          color: st.color || "#ffffff",
+          size: st.size || 13,
+          weight: 500,
+          backgroundColor: st.backgroundColor ?? "rgba(139,92,246,.85)",
+          paddingLeft: 7, paddingRight: 7, paddingTop: 4, paddingBottom: 4, borderRadius: 5,
+        },
+      }];
+    },
+  });
+
+  // Прямоугольник: выделение диапазона баров/цен; привязан ко времени —
+  // на любом таймфрейме накрывает тот же период (как в TradingView)
+  k.registerOverlay({
+    name: "simRect",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ overlay, coordinates }) => {
+      if (coordinates.length < 2) return [];
+      const [a, b] = coordinates;
+      const st = overlay.styles?.line ?? {};
+      const color = st.color || "#b598fb";
+      return [{
+        type: "polygon",
+        attrs: { coordinates: [{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }, { x: a.x, y: b.y }] },
+        styles: {
+          style: "stroke_fill",
+          color: withAlpha(color, 0.12),
+          borderColor: color, borderSize: st.size || 1, borderStyle: st.style || "solid",
+        },
+      }];
     },
   });
 
@@ -414,13 +469,33 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       const p = [].concat(chart.convertFromPixel([{ x, y }], { paneId: "candle_pane" }))[0];
       if (!p || p.value == null) return null;
       const e = {
-        name: "simpleAnnotation",
+        name: "simText",
         extendData: text,
         styles: styles ? JSON.parse(JSON.stringify(styles)) : undefined,
         points: [{ timestamp: pointTs(p), value: p.value }],
       };
       const id = createFromEntry(e);
-      return id ? { id, name: "simpleAnnotation" } : null;
+      return id ? { id, name: "simText" } : null;
+    },
+
+    // Данные комментария для редактирования (текст + стили из реестра)
+    textData(id) {
+      const e = registry.get(id);
+      return e ? { text: String(e.extendData ?? ""), styles: e.styles ?? {} } : null;
+    },
+    updateText(id, text) {
+      chart.overrideOverlay({ id, extendData: text });
+      const e = registry.get(id);
+      if (e) e.extendData = text;
+    },
+    // Экранная позиция первой точки оверлея (для поля редактирования)
+    overlayPixel(id) {
+      const ov = chart.getOverlayById?.(id);
+      if (!ov?.points?.length) return null;
+      const c = [].concat(chart.convertToPixel(
+        [{ timestamp: ov.points[0].timestamp, dataIndex: ov.points[0].dataIndex, value: ov.points[0].value }],
+        { paneId: "candle_pane" }))[0];
+      return c && Number.isFinite(c.x) ? { x: c.x, y: c.y } : null;
     },
 
     // Свой hit-test по клику: события кликов по фигурам в klinecharts ненадёжны,
@@ -438,11 +513,21 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       for (const id of drawn) {
         const ov = chart.getOverlayById?.(id);
         if (!ov?.points?.length) continue;
-        const tol = ov.name === "wave5" || ov.name === "waveABC" ? 24 : 14;
+        const tol = ["wave5", "waveABC", "simText", "simpleAnnotation"].includes(ov.name) ? 28 : 14;
         const cs = [].concat(chart.convertToPixel(
           ov.points.map((p) => ({ timestamp: p.timestamp, dataIndex: p.dataIndex, value: p.value })),
           { paneId: "candle_pane" },
         )).filter((c) => c && Number.isFinite(c.x));
+        // прямоугольник: попадание — весь его контур и внутренность
+        if (ov.name === "simRect" && cs.length > 1) {
+          const x0 = Math.min(cs[0].x, cs[1].x), x1 = Math.max(cs[0].x, cs[1].x);
+          const y0 = Math.min(cs[0].y, cs[1].y), y1 = Math.max(cs[0].y, cs[1].y);
+          if (x >= x0 - 6 && x <= x1 + 6 && y >= y0 - 6 && y <= y1 + 6) {
+            const d = 10; // внутри, но с меньшим приоритетом, чем точное попадание в линию
+            if (d < bestD) { bestD = d; best = { id, name: ov.name }; }
+          }
+          continue;
+        }
         for (let i = 0; i < cs.length; i++) {
           let d = Math.hypot(x - cs[i].x, y - cs[i].y);
           // у горизонтали и луча зона — вся линия, не только точки

@@ -5,7 +5,7 @@ import { esc, fmtRu, notify, confirmToast } from "../util.js";
 import * as eng from "./engine.js";
 import * as sapi from "./simapi.js";
 import { TIMEFRAMES, tfById, aggregateBars, loadKlines } from "./data.js";
-import { createSimChart, pricePrecision } from "./chart.js";
+import { createSimChart, pricePrecision, withAlpha } from "./chart.js";
 
 let W = null;
 
@@ -28,6 +28,19 @@ const saveStyle = (name, patch) => {
   try { localStorage.setItem(`sim-style-${name}`, JSON.stringify({ ...(savedStyle(name) ?? {}), ...patch })); }
   catch { /* квота localStorage не критична */ }
 };
+// Стиль комментария: цвет текста + заливка с прозрачностью (запоминается)
+const noteStyles = () => {
+  const s = savedStyle("simText") ?? {};
+  return { text: {
+    color: s.color ?? "#ffffff",
+    backgroundColor: withAlpha(s.bg ?? "#8b5cf6", (s.alpha ?? 85) / 100),
+  } };
+};
+const alphaOf = (rgba) => {
+  const m = /rgba?\([^)]*?,\s*([\d.]+)\)/.exec(rgba ?? "");
+  return m ? Math.round(Number(m[1]) * 100) : 85;
+};
+
 const stylesFromSaved = (name) => {
   const s = savedStyle(name);
   if (!s) return undefined;
@@ -48,6 +61,7 @@ const TOOLS = [
   { name: "simSegment", pts: 2, title: "Трендовая линия (с Shift — горизонтальная)", icon: svg('<path d="M5 19 19 5"/><circle cx="5" cy="19" r="1.6"/><circle cx="19" cy="5" r="1.6"/>') },
   { name: "simRay", pts: 2, title: "Луч (с Shift — горизонтальный)", icon: svg('<path d="M5 19 17 7"/><path d="M13.5 5.5H18.5V10.5"/><circle cx="5" cy="19" r="1.6"/>') },
   { name: "horizontalStraightLine", pts: 1, title: "Горизонтальный уровень", icon: svg('<path d="M4 12h16"/><circle cx="12" cy="12" r="1.6"/>') },
+  { name: "simRect", pts: 2, title: "Прямоугольник — выделить диапазон баров (виден на всех ТФ)", icon: svg('<rect x="4" y="7" width="16" height="10" rx="1"/>') },
   { name: "fibonacciLine", pts: 2, title: "Фибо-ретрейсмент", icon: svg('<path d="M4 6h16M4 12h16M4 18h16"/>') },
   { name: "wave5", pts: 6, title: "Пятиволновка: 6 кликов по вершинам — (0) 1 2 3 4 5", icon: '<span class="tld">1-5</span>' },
   { name: "waveABC", pts: 4, title: "Коррекция: 4 клика по вершинам — (0) A B C", icon: '<span class="tld">ABC</span>' },
@@ -101,6 +115,11 @@ export function mountWork(ctx) {
             <span class="ovdiv lineonly"></span>
             <button class="ovb lineonly" data-ls="solid" title="Сплошная">━</button>
             <button class="ovb lineonly" data-ls="dashed" title="Пунктир">╌</button>
+            <span class="ovdiv noteonly"></span>
+            <button class="ovb noteonly on" data-tt="color" title="Свотчи красят текст">Т</button>
+            <button class="ovb noteonly" data-tt="bg" title="Свотчи красят заливку">Фон</button>
+            <input type="range" class="ovrange noteonly" id="ov-alpha" min="0" max="100" step="5" title="Прозрачность заливки">
+            <button class="ovb noteonly" id="ov-edit" title="Изменить текст (или двойной клик по подписи)">✎</button>
             <span class="ovdiv"></span>
             <button class="ovb ov-copy" title="Копировать элемент (например, для канала)">⧉</button>
             <button class="ovb ov-del" title="Удалить инструмент (Del)">${svg('<path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/>')}</button>
@@ -134,12 +153,21 @@ export function mountWork(ctx) {
   // клики по графику: во время рисования считаем поставленные точки; вне рисования —
   // свой hit-test решает, попал ли клик в нарисованный объект (панель настроек)
   const chartEl = ctx.root.querySelector("#sim-chart");
+  // двойной клик по комментарию — редактирование текста на месте (как в TradingView)
+  chartEl.addEventListener("dblclick", (e) => {
+    if (!W || W.drawingActive || W.textMode) return;
+    const r = chartEl.getBoundingClientRect();
+    const hit = W.chartApi.hitTest(e.clientX - r.left, e.clientY - r.top);
+    if (hit?.name === "simText") editText(hit.id);
+  });
   chartEl.addEventListener("click", (e) => {
     if (!W) return;
     if (W.textMode) {
       W.textMode = false;
       const r = chartEl.getBoundingClientRect();
-      placeTextInput(e.clientX - r.left, e.clientY - r.top);
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      placeTextInput(x, y, "", (t) => W.chartApi.addTextAt(x, y, t, noteStyles()));
       return;
     }
     if (W.drawingActive) {
@@ -196,12 +224,40 @@ export function mountWork(ctx) {
   ovbar.querySelectorAll(".swp").forEach((b) => b.onclick = () => {
     if (!W.selectedOv) return;
     const c = b.dataset.c;
+    if (W.selectedOv.name === "simText") {
+      // у комментария свотчи красят текст или заливку — что выбрано кнопками Т/Фон
+      if (W.noteTarget === "bg") {
+        const alpha = Number(ovbar.querySelector("#ov-alpha").value) / 100;
+        W.chartApi.restyleOverlay(W.selectedOv.id, { text: { backgroundColor: withAlpha(c, alpha) } });
+        saveStyle("simText", { bg: c });
+      } else {
+        W.chartApi.restyleOverlay(W.selectedOv.id, { text: { color: c } });
+        saveStyle("simText", { color: c });
+      }
+      return;
+    }
     W.chartApi.restyleOverlay(W.selectedOv.id, {
       line: { color: c }, text: { color: c },
       point: { color: c, activeColor: c },
     });
     saveStyle(W.selectedOv.name, { color: c }); // новые элементы этого инструмента — в этом цвете
   });
+  ovbar.querySelectorAll(".ovb[data-tt]").forEach((b) => b.onclick = () => {
+    W.noteTarget = b.dataset.tt;
+    ovbar.querySelectorAll(".ovb[data-tt]").forEach((x) => x.classList.toggle("on", x === b));
+  });
+  ovbar.querySelector("#ov-alpha").oninput = () => {
+    if (W.selectedOv?.name !== "simText") return;
+    const alpha = Number(ovbar.querySelector("#ov-alpha").value);
+    const cur = W.chartApi.textData(W.selectedOv.id)?.styles?.text?.backgroundColor ?? "";
+    const rgb = /rgba?\(([^)]*?)(?:,\s*[\d.]+)?\)/.exec(cur)?.[1] ?? "139,92,246";
+    const parts = rgb.split(",").slice(0, 3).join(",");
+    W.chartApi.restyleOverlay(W.selectedOv.id, { text: { backgroundColor: `rgba(${parts},${alpha / 100})` } });
+    saveStyle("simText", { alpha });
+  };
+  ovbar.querySelector("#ov-edit").onclick = () => {
+    if (W.selectedOv?.name === "simText") editText(W.selectedOv.id);
+  };
   ovbar.querySelectorAll(".ovb[data-w]").forEach((b) => b.onclick = () => {
     if (!W.selectedOv) return;
     W.chartApi.restyleOverlay(W.selectedOv.id, { line: { size: Number(b.dataset.w) } });
@@ -248,8 +304,14 @@ function showOvBar(id, name) {
   W.selectedOv = { id, name };
   const bar = W.ctx.root.querySelector("#sw-ovbar");
   if (!bar) return;
-  // у волновых подписей и текста настраивается только цвет
+  // у волновых подписей настраивается только цвет; у комментария — текст/заливка/прозрачность
   bar.classList.toggle("textonly", ["wave5", "waveABC", "simpleAnnotation"].includes(name));
+  bar.classList.toggle("textnote", name === "simText");
+  if (name === "simText") {
+    W.noteTarget = W.noteTarget ?? "color";
+    const alphaInp = bar.querySelector("#ov-alpha");
+    if (alphaInp) alphaInp.value = String(alphaOf(W.chartApi.textData(id)?.styles?.text?.backgroundColor));
+  }
   bar.hidden = false;
 }
 
@@ -260,28 +322,27 @@ function hideOvBar() {
   if (bar) bar.hidden = true;
 }
 
-// Текст как в TradingView: клик по точке графика — поле ввода прямо на месте,
-// Enter/клик мимо — подпись поставлена, Esc — отмена. Без лимита символов.
-function placeTextInput(x, y) {
+// Текст как в TradingView: поле ввода прямо на графике; Enter/клик мимо — сохранить,
+// Esc — отмена. Без лимита символов. onCommit получает введённый текст.
+function placeTextInput(x, y, initial, onCommit) {
   const wrap = W.ctx.root.querySelector(".sim-chartwrap");
   const chartEl = W.ctx.root.querySelector("#sim-chart");
   if (!wrap || !chartEl) return;
-  const dx = chartEl.offsetLeft;
-  const dy = chartEl.offsetTop;
   const inp = document.createElement("input");
   inp.className = "sim-textinp";
   inp.placeholder = "Текст…";
-  inp.style.left = `${dx + x}px`;
-  inp.style.top = `${dy + y}px`;
+  inp.value = initial ?? "";
+  inp.style.left = `${chartEl.offsetLeft + x}px`;
+  inp.style.top = `${chartEl.offsetTop + y}px`;
   wrap.appendChild(inp);
-  setTimeout(() => inp.focus(), 0);
+  setTimeout(() => { inp.focus(); inp.select(); }, 0);
   let done = false;
   const commit = (save) => {
     if (done) return;
     done = true;
     const t = inp.value.trim();
     inp.remove();
-    if (save && t && W) W.chartApi.addTextAt(x, y, t, stylesFromSaved("simpleAnnotation"));
+    if (save && t && W) onCommit(t);
   };
   inp.onkeydown = (e) => {
     e.stopPropagation(); // Space/Delete не должны дёргать replay и удаление
@@ -289,6 +350,15 @@ function placeTextInput(x, y) {
     if (e.key === "Escape") commit(false);
   };
   inp.onblur = () => commit(true);
+}
+
+// Редактирование существующего комментария на месте
+function editText(id) {
+  const data = W.chartApi.textData(id);
+  const px2 = W.chartApi.overlayPixel(id);
+  if (!data || !px2) return;
+  hideOvBar();
+  placeTextInput(px2.x, px2.y, data.text, (t) => W.chartApi.updateText(id, t));
 }
 
 // ---------- Replay ----------

@@ -927,3 +927,10 @@ body.lightbox-open .side { display: none; }
   padding: 5px 9px; font-size: 13px; color: var(--text-1);
   background: var(--bg-2); border: 1px solid var(--accent); border-radius: 7px;
   box-shadow: var(--shadow-pop); outline: none; }
+
+/* Симулятор: настройки комментария (текст/заливка/прозрачность/редактирование) */
+.sim-ovbar .noteonly { display: none; }
+.sim-ovbar.textnote .noteonly { display: inline-flex; align-items: center; }
+.sim-ovbar.textnote .lineonly { display: none; }
+.sim-ovbar .ovrange { width: 74px; accent-color: var(--accent); }
+.sim-ovbar .ovb.on { background: var(--accent); color: #fff; }
