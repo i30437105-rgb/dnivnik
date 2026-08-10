@@ -28,62 +28,80 @@ export function pricePrecision(p) {
 
 const DAY_MS = 86400e3;
 
-const dayVolumes = (list) => {
-  const byDay = new Map(); // индекс суток -> {sum, count}
+const mean = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+
+// Базы дня: по объёмам прошлых days суток — общий средний, средний пиковый
+// (topN самых объёмных баров) и средний минимальный (topN самых тихих)
+const dayBases = (list, days, topN) => {
+  const byDay = new Map(); // индекс суток -> массив объёмов
   for (const b of list) {
     const d = Math.floor(b.timestamp / DAY_MS);
-    const e = byDay.get(d) ?? { sum: 0, count: 0 };
-    e.sum += b.volume ?? 0;
-    e.count += 1;
-    byDay.set(d, e);
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(b.volume ?? 0);
   }
-  return byDay;
-};
-
-const prevAvg = (byDay, day, days) => {
-  let sum = 0;
-  let count = 0;
-  for (let k = 1; k <= days; k++) {
-    const e = byDay.get(day - k);
-    if (e) { sum += e.sum; count += e.count; }
-  }
-  return count ? sum / count : null;
+  const cache = new Map(); // индекс суток -> {avg, peak, low} | null
+  return (day) => {
+    if (cache.has(day)) return cache.get(day);
+    const vols = [];
+    for (let k = 1; k <= days; k++) {
+      const a = byDay.get(day - k);
+      if (a) vols.push(...a);
+    }
+    let res = null;
+    if (vols.length) {
+      vols.sort((a, b) => b - a);
+      const n = Math.max(1, Math.min(topN, vols.length));
+      res = { avg: mean(vols), peak: mean(vols.slice(0, n)), low: mean(vols.slice(-n)) };
+    }
+    cache.set(day, res);
+    return res;
+  };
 };
 
 export function xvolEval(list, s) {
   const days = Math.max(1, Number(s.days) || 1);
-  const byDay = dayVolumes(list);
+  const topN = Math.max(1, Number(s.top) || 10);
+  const baseKey = s.base === "peak" || s.base === "low" ? s.base : "avg";
+  const basesFor = dayBases(list, days, topN);
   return list.map((b) => {
     const v = b.volume ?? 0;
-    const avg = prevAvg(byDay, Math.floor(b.timestamp / DAY_MS), days);
+    const bases = basesFor(Math.floor(b.timestamp / DAY_MS));
+    const base = bases?.[baseKey] ?? null;
     let mark = false;
     if (s.mode === "abs") {
       const from = Number(s.from);
       const to = Number(s.to);
       mark = from > 0 && v >= from && (!(to > 0) || v <= to);
-    } else if (avg != null) {
-      mark = v >= (Number(s.mult) || 2) * avg;
+    } else if (base != null) {
+      mark = v >= (Number(s.mult) || 2) * base;
     }
-    return { mark, avg, ratio: avg ? v / avg : null, high: b.high };
+    return { mark, base, ratio: base ? v / base : null, high: b.high };
   });
 }
 
-// Справка для последнего бара: средний и пиковый объём за прошлые days суток
-export function xvolInfo(list, days) {
-  if (!list.length) return { avg: null, peak: null, count: 0 };
+// Справка для последнего бара за прошлые days суток: три ориентира —
+// средний пиковый (по topN самым объёмным барам), общий средний,
+// средний минимальный (по topN самым тихим). Для настройки диапазона.
+export function xvolInfo(list, days, topN = 10) {
+  const empty = { avg: null, avgPeak: null, avgLow: null, count: 0 };
+  if (!list.length) return empty;
   const d = Math.max(1, Number(days) || 1);
   const day = Math.floor(list[list.length - 1].timestamp / DAY_MS);
-  const byDay = dayVolumes(list);
-  let peak = null;
-  let count = 0;
+  const vols = [];
   for (const b of list) {
     const bd = Math.floor(b.timestamp / DAY_MS);
-    if (bd >= day - d && bd < day) {
-      count += 1;
-      if (peak == null || (b.volume ?? 0) > peak) peak = b.volume ?? 0;
-    }
+    if (bd >= day - d && bd < day) vols.push(b.volume ?? 0);
   }
-  return { avg: prevAvg(byDay, day, d), peak, count };
+  if (!vols.length) return empty;
+  vols.sort((a, b) => b - a);
+  const mean = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+  const n = Math.max(1, Math.min(Number(topN) || 10, vols.length));
+  return {
+    avg: mean(vols),
+    avgPeak: mean(vols.slice(0, n)),
+    avgLow: mean(vols.slice(-n)),
+    count: vols.length,
+  };
 }
 
 // ---------- Расширения: индикатор WWV и разметка волн (регистрируются один раз) ----------

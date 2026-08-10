@@ -42,7 +42,7 @@ const alphaOf = (rgba) => {
 };
 
 // Настройки индикатора экстремальных объёмов (XVOL)
-const XVOL_DEF = { on: false, mode: "rel", days: 1, mult: 2, from: null, to: null };
+const XVOL_DEF = { on: false, mode: "rel", days: 1, mult: 2, base: "avg", from: null, to: null, top: 10 };
 const xvolSettings = () => {
   try { return { ...XVOL_DEF, ...(JSON.parse(localStorage.getItem("sim-xvol")) ?? {}) }; }
   catch { return { ...XVOL_DEF }; }
@@ -127,10 +127,18 @@ export function mountWork(ctx) {
               <input id="xv-days" type="number" min="1" max="30" step="1" inputmode="numeric"></label>
             <label class="xv-row xv-rel">Множитель ×
               <input id="xv-mult" type="number" min="1" step="0.5" inputmode="decimal"></label>
+            <label class="xv-row xv-rel">База кратности
+              <select id="xv-base">
+                <option value="avg">Средний</option>
+                <option value="peak">Ср. пиковый</option>
+                <option value="low">Ср. минимальный</option>
+              </select></label>
             <label class="xv-row xv-abs" hidden>Объём от
               <input id="xv-from" type="number" min="0" step="any" inputmode="decimal"></label>
             <label class="xv-row xv-abs" hidden>до
               <input id="xv-to" type="number" min="0" step="any" placeholder="без границы" inputmode="decimal"></label>
+            <label class="xv-row">Выборка топ/низ, баров
+              <input id="xv-top" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
             <div class="muted num" id="xv-info"></div>
           </div>
           <div id="sw-ovbar" class="sim-ovbar" hidden>
@@ -257,8 +265,10 @@ export function mountWork(ctx) {
     xvBox.querySelectorAll("#xv-mode .btn").forEach((b) => b.classList.toggle("on", b.dataset.m === s.mode));
     xvBox.querySelector("#xv-days").value = String(s.days);
     xvBox.querySelector("#xv-mult").value = String(s.mult);
+    xvBox.querySelector("#xv-base").value = s.base ?? "avg";
     xvBox.querySelector("#xv-from").value = s.from ?? "";
     xvBox.querySelector("#xv-to").value = s.to ?? "";
+    xvBox.querySelector("#xv-top").value = String(s.top ?? 10);
     xvBox.querySelectorAll(".xv-rel").forEach((x) => x.hidden = s.mode !== "rel");
     xvBox.querySelectorAll(".xv-abs").forEach((x) => x.hidden = s.mode !== "abs");
     $("#sw-xvol").classList.toggle("on", s.on);
@@ -273,10 +283,11 @@ export function mountWork(ctx) {
     const el = xvBox.querySelector("#xv-info");
     if (!el || xvBox.hidden) return;
     const s = xvolSettings();
-    const inf = xvolInfo(viewBars(), s.days);
+    const inf = xvolInfo(viewBars(), s.days, s.top);
+    const n = Math.max(1, Math.min(Number(s.top) || 10, inf.count));
     el.textContent = inf.avg == null
       ? "Нет данных за прошлый период (мало истории)"
-      : `Средний бар: ${fmtRu(inf.avg, 1)} · пик: ${fmtRu(inf.peak ?? 0, 1)} — за ${s.days} сут на текущем ТФ`;
+      : `Ср. пиковый (топ-${n}): ${fmtRu(inf.avgPeak, 1)} · средний: ${fmtRu(inf.avg, 1)} · ср. минимальный: ${fmtRu(inf.avgLow, 1)} — за ${s.days} сут на текущем ТФ`;
   };
   $("#sw-xvol").onclick = () => {
     xvBox.hidden = !xvBox.hidden;
@@ -288,13 +299,14 @@ export function mountWork(ctx) {
     xvFill();
     xvApply();
   });
-  for (const [id, key] of [["#xv-days", "days"], ["#xv-mult", "mult"], ["#xv-from", "from"], ["#xv-to", "to"]]) {
+  for (const [id, key] of [["#xv-days", "days"], ["#xv-mult", "mult"], ["#xv-from", "from"], ["#xv-to", "to"], ["#xv-top", "top"]]) {
     xvBox.querySelector(id).onchange = (e) => {
       const v = e.target.value === "" ? null : Number(e.target.value);
       saveXvol({ [key]: v });
       xvApply();
     };
   }
+  xvBox.querySelector("#xv-base").onchange = (e) => { saveXvol({ base: e.target.value }); xvApply(); };
   W.xvApply = xvApply;
   W.xvUpdateInfo = xvUpdateInfo;
   if (xvolSettings().on) xvApply();
@@ -552,8 +564,9 @@ function maybeNotifyXvol() {
   if (s.mode === "abs") {
     mark = Number(s.from) > 0 && v >= Number(s.from) && (!(Number(s.to) > 0) || v <= Number(s.to));
   } else {
-    const { avg } = xvolInfo(bars, s.days);
-    if (avg != null) { mark = v >= (Number(s.mult) || 2) * avg; ratio = v / avg; }
+    const inf = xvolInfo(bars, s.days, s.top);
+    const base = s.base === "peak" ? inf.avgPeak : s.base === "low" ? inf.avgLow : inf.avg;
+    if (base != null) { mark = v >= (Number(s.mult) || 2) * base; ratio = v / base; }
   }
   if (!mark) return;
   const key = `${W.viewTf}:${b.timestamp}`;
