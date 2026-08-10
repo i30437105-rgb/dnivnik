@@ -89,9 +89,9 @@ export function fmtVolShort(v) {
   return fmt3(v);
 }
 
-// Бары, над которыми стоит зелёная цифра волны (WWVN) — чтобы знак ⚡ не
-// накладывался на текст, он рисуется выше цифры на таких барах
-let wwvnUpTs = new Set();
+// Бары со знаком ⚡ (XVOL) — цифра волны (WWVN) на таких барах и их соседях
+// поднимается вторым уровнем выше знака, чтобы не перекрывать его
+let xvolMarkTs = new Set();
 
 // Справка для последнего бара за прошлые days суток: три ориентира —
 // средний пиковый (по topN самым объёмным барам), общий средний,
@@ -312,7 +312,9 @@ function registerExtensions(k) {
     calc: (list, { calcParams }) => {
       let s = {};
       try { s = JSON.parse(calcParams[0]) ?? {}; } catch { /* дефолты */ }
-      return xvolEval(list, s);
+      const out = xvolEval(list, s);
+      xvolMarkTs = new Set(out.filter((r) => r.mark).map((r) => r.ts));
+      return out;
     },
     draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
       const res = indicator.result ?? [];
@@ -325,9 +327,7 @@ function registerExtensions(k) {
       ctx.fillStyle = "#e0a83a";
       for (let i = from; i < to; i++) {
         if (!res[i]?.mark) continue;
-        // если на баре стоит цифра волны — знак поднимаем выше, чтобы не перекрывал текст
-        const lift = wwvnUpTs.has(res[i].ts) ? 21 : 4;
-        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - lift);
+        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - 4);
       }
       ctx.restore();
       return true; // фигуры по умолчанию не рисуем
@@ -383,17 +383,14 @@ function registerExtensions(k) {
     figures: [],
     calc: (list, { calcParams }) => {
       const { waves, current } = weisWavesCalc(list, calcParams[0] ?? 14);
-      const out = list.map(() => ({}));
-      const upSet = new Set();
+      // h/l/ts каждого бара нужны в draw: опора цифры — крайние точки соседей
+      const out = list.map((b) => ({ h: b.high, l: b.low, ts: b.timestamp }));
       for (const w of waves) {
-        out[w.extIdx] = { label: w.vol, up: w.dir > 0, price: w.extPrice };
-        if (w.dir > 0) upSet.add(list[w.extIdx].timestamp);
+        out[w.extIdx] = { ...out[w.extIdx], label: w.vol, up: w.dir > 0, price: w.extPrice };
       }
       if (current) {
-        out[current.extIdx] = { label: current.vol, up: current.dir > 0, price: current.extPrice, live: true };
-        if (current.dir > 0) upSet.add(list[current.extIdx].timestamp);
+        out[current.extIdx] = { ...out[current.extIdx], label: current.vol, up: current.dir > 0, price: current.extPrice, live: true };
       }
-      wwvnUpTs = upSet; // XVOL приподнимет ⚡ над этими барами
       return out;
     },
     draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
@@ -410,7 +407,22 @@ function registerExtensions(k) {
         const txt = fmtVolShort(r.label) + (r.live ? "_" : "");
         const w = ctx.measureText(txt).width;
         const x = xAxis.convertToPixel(i);
-        let y = yAxis.convertToPixel(r.price) + (r.up ? -6 : 6);
+        // опора — крайняя точка всех баров под текстом (±3), а не только вик:
+        // иначе на низах откатов текст ложится на соседние бары
+        let ref = r.price;
+        for (let j = Math.max(0, i - 3); j <= Math.min(res.length - 1, i + 3); j++) {
+          const q = res[j];
+          if (!q) continue;
+          if (r.up && q.h != null) ref = Math.max(ref, q.h);
+          if (!r.up && q.l != null) ref = Math.min(ref, q.l);
+        }
+        let y = yAxis.convertToPixel(ref) + (r.up ? -6 : 6);
+        // ⚡ на баре вершины или соседях — цифра уходит вторым уровнем выше знака
+        if (r.up) {
+          for (let j = Math.max(0, i - 1); j <= Math.min(res.length - 1, i + 1); j++) {
+            if (xvolMarkTs.has(res[j]?.ts)) { y -= 16; break; }
+          }
+        }
         const bboxAt = (yy) =>
           r.up
             ? { l: x - w / 2, r: x + w / 2, t: yy - 12, b: yy }
@@ -851,7 +863,6 @@ export function createSimChart(el, hooks = {}, opts = {}) {
         chart.createIndicator({ name: "WWVN", calcParams: [14] }, true, { id: "candle_pane" });
       } else if (!on && has) {
         chart.removeIndicator("candle_pane", "WWVN");
-        wwvnUpTs = new Set(); // цифр больше нет — ⚡ возвращается к бару
       }
     },
     wwvnCount() {
@@ -866,6 +877,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "XVOL"));
       if (!s?.on) {
         if (has) chart.removeIndicator("candle_pane", "XVOL");
+        xvolMarkTs = new Set(); // знаков больше нет — цифры волн возвращаются к бару
         return;
       }
       const param = JSON.stringify(s);
