@@ -142,6 +142,12 @@ export function mountWork(ctx) {
               <input id="xv-top" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
             <div class="muted num" id="xv-info"></div>
           </div>
+          <div id="sw-wwvnbox" class="sim-xvolbox" hidden>
+            <label class="xv-row"><input type="checkbox" id="wn-on"> Цифры объёмов волн №</label>
+            <label class="xv-row">Разворот, ×ATR
+              <input id="wn-sens" type="number" min="0.1" max="10" step="0.5" inputmode="decimal"></label>
+            <div class="muted">1 — как обычно; 2–3 — мелкие колебания склеиваются в крупные волны</div>
+          </div>
           <div id="sw-ovbar" class="sim-ovbar" hidden>
             ${["#b598fb", "#ece7df", "#9b9389", "#4cc47a", "#a3e635", "#2dd4bf",
                "#4db8ff", "#5c7cfa", "#f06292", "#f0553f", "#ff9040", "#e0a83a"].map((c) =>
@@ -292,6 +298,7 @@ export function mountWork(ctx) {
   };
   $("#sw-xvol").onclick = () => {
     xvBox.hidden = !xvBox.hidden;
+    $("#sw-wwvnbox").hidden = true;
     if (!xvBox.hidden) { xvFill(); xvUpdateInfo(); }
   };
   xvBox.querySelector("#xv-on").onchange = (e) => { saveXvol({ on: e.target.checked }); xvApply(); };
@@ -312,14 +319,33 @@ export function mountWork(ctx) {
   W.xvUpdateInfo = xvUpdateInfo;
   if (xvolSettings().on) xvApply();
 
-  // Объёмы волн у вершин (WWVN) — тоггл с памятью
+  // Объёмы волн у вершин (WWVN) — панель: вкл/выкл + чувствительность разворота
+  const wnBox = $("#sw-wwvnbox");
+  const wwvnSens = () => {
+    const v = Number(localStorage.getItem("sim-wwvn-sens"));
+    return v > 0 ? v : 1;
+  };
   const wwvnApply = () => {
     const on = localStorage.getItem("sim-wwvn") === "1";
-    W.chartApi.setWwvn(on);
+    W.chartApi.setWwvn(on, wwvnSens());
+    W.chartApi.setWwvSens(wwvnSens()); // гистограмма WWV режется теми же волнами
     $("#sw-wwvn").classList.toggle("on", on);
   };
   $("#sw-wwvn").onclick = () => {
-    localStorage.setItem("sim-wwvn", localStorage.getItem("sim-wwvn") === "1" ? "0" : "1");
+    wnBox.hidden = !wnBox.hidden;
+    xvBox.hidden = true;
+    if (!wnBox.hidden) {
+      wnBox.querySelector("#wn-on").checked = localStorage.getItem("sim-wwvn") === "1";
+      wnBox.querySelector("#wn-sens").value = String(wwvnSens());
+    }
+  };
+  wnBox.querySelector("#wn-on").onchange = (e) => {
+    localStorage.setItem("sim-wwvn", e.target.checked ? "1" : "0");
+    wwvnApply();
+  };
+  wnBox.querySelector("#wn-sens").onchange = (e) => {
+    const v = Number(e.target.value);
+    localStorage.setItem("sim-wwvn-sens", String(v > 0 ? v : 1));
     wwvnApply();
   };
   wwvnApply();

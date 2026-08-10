@@ -119,12 +119,14 @@ export function xvolInfo(list, days, topN = 10) {
 }
 
 // ---------- Волны Вайса (общая математика WWV и WWVN) ----------
-// Гибрид: РАЗВОРОТ волны — по закрытию (откат close от экстремума ≥ ATR, RMA
-// Уайлдера), а ВЕРШИНА волны — по вику: максимальный high / минимальный low
+// Гибрид: РАЗВОРОТ волны — по закрытию (откат close от экстремума ≥ sens×ATR,
+// RMA Уайлдера), а ВЕРШИНА волны — по вику: максимальный high / минимальный low
 // внутри волны. Объём режется по бару-экстремуму, поэтому цифры стоят на пиках.
-export function weisWavesCalc(list, period = 14) {
+// sens — чувствительность: 1 как обычно, 2–3 склеивают мелкие колебания в крупные волны.
+export function weisWavesCalc(list, period = 14, sens = 1) {
   const n = list.length;
   if (!n) return { assign: [], waves: [], current: null };
+  const k = Math.max(0.1, Number(sens) || 1);
 
   const atrArr = new Array(n);
   let atr = 0;
@@ -166,7 +168,7 @@ export function weisWavesCalc(list, period = 14) {
       if (b.low < extPrice) { extPrice = b.low; extIdx = i; }
     }
     const pulled = dir > 0 ? extClose - b.close : b.close - extClose;
-    if (atrArr[i] > 0 && pulled >= atrArr[i] && extIdx < i) {
+    if (atrArr[i] > 0 && pulled >= k * atrArr[i] && extIdx < i) {
       // разворот: волна закончилась на своём вике-экстремуме, дальше — новая
       finalize(extIdx);
       dir = -dir;
@@ -369,7 +371,7 @@ function registerExtensions(k) {
     }],
     calc: (list, { calcParams }) => {
       // общая гибридная математика волн — гистограмма совпадает с цифрами WWVN
-      const { assign } = weisWavesCalc(list, calcParams[0] ?? 14);
+      const { assign } = weisWavesCalc(list, calcParams[0] ?? 14, calcParams[1] ?? 1);
       return assign.map((a) => ({ wave: a?.cum ?? 0, dir: a?.dir ?? 1 }));
     },
   });
@@ -382,7 +384,7 @@ function registerExtensions(k) {
     calcParams: [14],
     figures: [],
     calc: (list, { calcParams }) => {
-      const { waves, current } = weisWavesCalc(list, calcParams[0] ?? 14);
+      const { waves, current } = weisWavesCalc(list, calcParams[0] ?? 14, calcParams[1] ?? 1);
       // h/l/ts каждого бара нужны в draw: опора цифры — крайние точки соседей
       const out = list.map((b) => ({ h: b.high, l: b.low, ts: b.timestamp }));
       for (const w of waves) {
@@ -568,7 +570,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   }
   // Объём без MA-линий — чистая гистограмма; под ним WWV ATR 14 (как на Bybit у Ивана)
   chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: 72 });
-  chart.createIndicator({ name: "WWV", calcParams: [14] }, false, { id: "sim_wwv", height: 72 });
+  chart.createIndicator({ name: "WWV", calcParams: [14, 1] }, false, { id: "sim_wwv", height: 72 });
 
   const drawn = new Set();  // пользовательская разметка
   let lastDrawn = null;     // оверлей, который сейчас рисуется (для finishDrawing)
@@ -855,15 +857,22 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       this.setPnlTag(null);
     },
 
-    // Объёмы волн цифрами у вершин (WWVN): on = вкл/выкл
-    setWwvn(on) {
+    // Объёмы волн цифрами у вершин (WWVN): on = вкл/выкл, sens = чувствительность ×ATR
+    setWwvn(on, sens = 1) {
       const norm = (got) => (got instanceof Map ? got.get("WWVN") : Array.isArray(got) ? got[0] : got);
       const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "WWVN"));
+      const params = [14, Math.max(0.1, Number(sens) || 1)];
       if (on && !has) {
-        chart.createIndicator({ name: "WWVN", calcParams: [14] }, true, { id: "candle_pane" });
+        chart.createIndicator({ name: "WWVN", calcParams: params }, true, { id: "candle_pane" });
+      } else if (on && has) {
+        chart.overrideIndicator({ name: "WWVN", calcParams: params }, "candle_pane");
       } else if (!on && has) {
         chart.removeIndicator("candle_pane", "WWVN");
       }
+    },
+    // Чувствительность гистограммы WWV — та же, чтобы колонки совпадали с цифрами
+    setWwvSens(sens) {
+      chart.overrideIndicator({ name: "WWV", calcParams: [14, Math.max(0.1, Number(sens) || 1)] }, "sim_wwv");
     },
     wwvnCount() {
       const got = chart.getIndicatorByPaneId?.("candle_pane", "WWVN");
