@@ -110,6 +110,7 @@ export function mountWork(ctx) {
           <div class="sim-tools">
             ${TOOLS.map((t) => `<button class="tool" data-draw="${t.name}" title="${t.title}">${t.icon}</button>`).join("")}
             <button class="tool" id="sw-xvol" title="Экстремальные объёмы — знак ⚡ над баром">⚡</button>
+            <button class="tool" id="sw-wwvn" title="Объёмы волн цифрами у вершин (разворот по close ± ATR, вершины по вику)"><span class="tld">№</span></button>
             <button class="tool" id="sw-wavelvl" title="Уровень волновой разметки: 1 старший ((1)) → 2 (1) → 3 просто → 4 римские"><span class="tld">ур.${waveLevel()}</span></button>
             <button class="tool" id="sw-clear" title="Стереть разметку">${svg('<path d="m14 5 5 5-9 9H5v-5Z"/><path d="M4 19h9"/>')}</button>
           </div>
@@ -310,6 +311,18 @@ export function mountWork(ctx) {
   W.xvApply = xvApply;
   W.xvUpdateInfo = xvUpdateInfo;
   if (xvolSettings().on) xvApply();
+
+  // Объёмы волн у вершин (WWVN) — тоггл с памятью
+  const wwvnApply = () => {
+    const on = localStorage.getItem("sim-wwvn") === "1";
+    W.chartApi.setWwvn(on);
+    $("#sw-wwvn").classList.toggle("on", on);
+  };
+  $("#sw-wwvn").onclick = () => {
+    localStorage.setItem("sim-wwvn", localStorage.getItem("sim-wwvn") === "1" ? "0" : "1");
+    wwvnApply();
+  };
+  wwvnApply();
 
   // Панель настроек выделенного инструмента: цвет, толщина, тип линии, удаление
   const ovbar = $("#sw-ovbar");

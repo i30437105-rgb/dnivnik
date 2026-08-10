@@ -104,6 +104,89 @@ export function xvolInfo(list, days, topN = 10) {
   };
 }
 
+// ---------- Волны Вайса (общая математика WWV и WWVN) ----------
+// Гибрид: РАЗВОРОТ волны — по закрытию (откат close от экстремума ≥ ATR, RMA
+// Уайлдера), а ВЕРШИНА волны — по вику: максимальный high / минимальный low
+// внутри волны. Объём режется по бару-экстремуму, поэтому цифры стоят на пиках.
+export function weisWavesCalc(list, period = 14) {
+  const n = list.length;
+  if (!n) return { assign: [], waves: [], current: null };
+
+  const atrArr = new Array(n);
+  let atr = 0;
+  for (let i = 0; i < n; i++) {
+    const b = list[i];
+    const pc = i ? list[i - 1].close : b.close;
+    const tr = Math.max(b.high - b.low, Math.abs(b.high - pc), Math.abs(b.low - pc));
+    atr = i === 0 ? tr : (atr * (period - 1) + tr) / period;
+    atrArr[i] = atr;
+  }
+
+  const waves = [];
+  let dir = 0;
+  let start = 0;
+  let extClose = list[0].close; // экстремум закрытий — для детекта разворота
+  let extIdx = 0;               // бар вика-экстремума — граница волны
+  let extPrice = list[0].high;
+
+  const finalize = (endIdx) => {
+    let vol = 0;
+    for (let j = start; j <= endIdx; j++) vol += list[j].volume ?? 0;
+    waves.push({ dir, start, end: endIdx, vol, extIdx, extPrice });
+  };
+
+  for (let i = 0; i < n; i++) {
+    const b = list[i];
+    if (dir === 0) {
+      const pc = i ? list[i - 1].close : b.close;
+      dir = b.close >= pc ? 1 : -1;
+      extClose = b.close;
+      extIdx = i;
+      extPrice = dir > 0 ? b.high : b.low;
+    }
+    if (dir > 0) {
+      if (b.close > extClose) extClose = b.close;
+      if (b.high > extPrice) { extPrice = b.high; extIdx = i; }
+    } else {
+      if (b.close < extClose) extClose = b.close;
+      if (b.low < extPrice) { extPrice = b.low; extIdx = i; }
+    }
+    const pulled = dir > 0 ? extClose - b.close : b.close - extClose;
+    if (atrArr[i] > 0 && pulled >= atrArr[i] && extIdx < i) {
+      // разворот: волна закончилась на своём вике-экстремуме, дальше — новая
+      finalize(extIdx);
+      dir = -dir;
+      start = extIdx + 1;
+      extClose = list[start].close;
+      extIdx = start;
+      extPrice = dir > 0 ? list[start].high : list[start].low;
+      for (let j = start; j <= i; j++) {
+        const c = list[j];
+        if (dir > 0) {
+          if (c.close > extClose) extClose = c.close;
+          if (c.high > extPrice) { extPrice = c.high; extIdx = j; }
+        } else {
+          if (c.close < extClose) extClose = c.close;
+          if (c.low < extPrice) { extPrice = c.low; extIdx = j; }
+        }
+      }
+    }
+  }
+  let vol = 0;
+  for (let j = start; j < n; j++) vol += list[j].volume ?? 0;
+  const current = { dir, start, end: n - 1, vol, extIdx, extPrice };
+
+  const assign = new Array(n);
+  for (const w of [...waves, current]) {
+    let cum = 0;
+    for (let j = w.start; j <= w.end; j++) {
+      cum += list[j].volume ?? 0;
+      assign[j] = { dir: w.dir, cum };
+    }
+  }
+  return { assign, waves, current };
+}
+
 // ---------- Расширения: индикатор WWV и разметка волн (регистрируются один раз) ----------
 
 let extensionsReady = false;
@@ -269,26 +352,44 @@ function registerExtensions(k) {
       }),
     }],
     calc: (list, { calcParams }) => {
-      const period = calcParams[0] ?? 14;
-      let atr = 0;
-      let dir = 0;
-      let extreme = null;
-      let vol = 0;
-      return list.map((b, i) => {
-        const prevClose = i ? list[i - 1].close : b.close;
-        const tr = Math.max(b.high - b.low, Math.abs(b.high - prevClose), Math.abs(b.low - prevClose));
-        atr = i === 0 ? tr : (atr * (period - 1) + tr) / period; // RMA Уайлдера
-        if (dir === 0) { dir = b.close >= prevClose ? 1 : -1; extreme = b.close; }
-        if (dir > 0) {
-          if (b.close > extreme) extreme = b.close;
-          if (atr > 0 && extreme - b.close >= atr) { dir = -1; extreme = b.close; vol = 0; }
-        } else {
-          if (b.close < extreme) extreme = b.close;
-          if (atr > 0 && b.close - extreme >= atr) { dir = 1; extreme = b.close; vol = 0; }
-        }
-        vol += b.volume ?? 0;
-        return { wave: vol, dir };
-      });
+      // общая гибридная математика волн — гистограмма совпадает с цифрами WWVN
+      const { assign } = weisWavesCalc(list, calcParams[0] ?? 14);
+      return assign.map((a) => ({ wave: a?.cum ?? 0, dir: a?.dir ?? 1 }));
+    },
+  });
+
+  // WWVN — объёмы волн цифрами у вершин прямо на графике: зелёные над пиками
+  // волн вверх, красные под низами волн вниз; текущая волна помечена «_»
+  k.registerIndicator({
+    name: "WWVN",
+    shortName: "WWVN",
+    calcParams: [14],
+    figures: [],
+    calc: (list, { calcParams }) => {
+      const { waves, current } = weisWavesCalc(list, calcParams[0] ?? 14);
+      const out = list.map(() => ({}));
+      for (const w of waves) out[w.extIdx] = { label: w.vol, up: w.dir > 0, price: w.extPrice };
+      if (current) out[current.extIdx] = { label: current.vol, up: current.dir > 0, price: current.extPrice, live: true };
+      return out;
+    },
+    draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
+      const res = indicator.result ?? [];
+      const from = Math.max(0, Math.floor(visibleRange?.from ?? 0));
+      const to = Math.min(res.length, Math.ceil(visibleRange?.to ?? res.length));
+      ctx.save();
+      ctx.font = "600 11px sans-serif";
+      ctx.textAlign = "center";
+      for (let i = from; i < to; i++) {
+        const r = res[i];
+        if (r?.label == null) continue;
+        const v = r.label;
+        const txt = (v >= 100 ? String(Math.round(v)) : String(+v.toFixed(1))) + (r.live ? "_" : "");
+        ctx.fillStyle = r.up ? "#4cc47a" : "#f0553f";
+        ctx.textBaseline = r.up ? "bottom" : "top";
+        ctx.fillText(txt, xAxis.convertToPixel(i), yAxis.convertToPixel(r.price) + (r.up ? -6 : 6));
+      }
+      ctx.restore();
+      return true;
     },
   });
 
@@ -700,6 +801,25 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       for (const id of posIds.splice(0)) if (id) chart.removeOverlay({ id });
       this.setTpSl({ tp: null, sl: null });
       this.setPnlTag(null);
+    },
+
+    // Объёмы волн цифрами у вершин (WWVN): on = вкл/выкл
+    setWwvn(on) {
+      const norm = (got) => (got instanceof Map ? got.get("WWVN") : Array.isArray(got) ? got[0] : got);
+      const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "WWVN"));
+      if (on && !has) {
+        chart.createIndicator({
+          name: "WWVN", calcParams: [14],
+          styles: { tooltip: { showRule: "none" } },
+        }, true, { id: "candle_pane" });
+      } else if (!on && has) {
+        chart.removeIndicator("candle_pane", "WWVN");
+      }
+    },
+    wwvnCount() {
+      const got = chart.getIndicatorByPaneId?.("candle_pane", "WWVN");
+      const ind = got instanceof Map ? got.get("WWVN") : Array.isArray(got) ? got[0] : got;
+      return (ind?.result ?? []).filter((r) => r?.label != null).length;
     },
 
     // Индикатор экстремальных объёмов: s = настройки или {on:false} — убрать
