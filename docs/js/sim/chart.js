@@ -21,6 +21,71 @@ export function pricePrecision(p) {
   return 8;
 }
 
+// ---------- Экстремальные объёмы (XVOL) ----------
+// База — средний объём бара ТЕКУЩЕГО ТФ за прошлые s.days суток (границы суток UTC,
+// как у Bybit); база меняется только на границе суток — никаких скользящих окон.
+// mode "rel": объём ≥ mult × средний;  mode "abs": объём в диапазоне [from, to].
+
+const DAY_MS = 86400e3;
+
+const dayVolumes = (list) => {
+  const byDay = new Map(); // индекс суток -> {sum, count}
+  for (const b of list) {
+    const d = Math.floor(b.timestamp / DAY_MS);
+    const e = byDay.get(d) ?? { sum: 0, count: 0 };
+    e.sum += b.volume ?? 0;
+    e.count += 1;
+    byDay.set(d, e);
+  }
+  return byDay;
+};
+
+const prevAvg = (byDay, day, days) => {
+  let sum = 0;
+  let count = 0;
+  for (let k = 1; k <= days; k++) {
+    const e = byDay.get(day - k);
+    if (e) { sum += e.sum; count += e.count; }
+  }
+  return count ? sum / count : null;
+};
+
+export function xvolEval(list, s) {
+  const days = Math.max(1, Number(s.days) || 1);
+  const byDay = dayVolumes(list);
+  return list.map((b) => {
+    const v = b.volume ?? 0;
+    const avg = prevAvg(byDay, Math.floor(b.timestamp / DAY_MS), days);
+    let mark = false;
+    if (s.mode === "abs") {
+      const from = Number(s.from);
+      const to = Number(s.to);
+      mark = from > 0 && v >= from && (!(to > 0) || v <= to);
+    } else if (avg != null) {
+      mark = v >= (Number(s.mult) || 2) * avg;
+    }
+    return { mark, avg, ratio: avg ? v / avg : null, high: b.high };
+  });
+}
+
+// Справка для последнего бара: средний и пиковый объём за прошлые days суток
+export function xvolInfo(list, days) {
+  if (!list.length) return { avg: null, peak: null, count: 0 };
+  const d = Math.max(1, Number(days) || 1);
+  const day = Math.floor(list[list.length - 1].timestamp / DAY_MS);
+  const byDay = dayVolumes(list);
+  let peak = null;
+  let count = 0;
+  for (const b of list) {
+    const bd = Math.floor(b.timestamp / DAY_MS);
+    if (bd >= day - d && bd < day) {
+      count += 1;
+      if (peak == null || (b.volume ?? 0) > peak) peak = b.volume ?? 0;
+    }
+  }
+  return { avg: prevAvg(byDay, day, d), peak, count };
+}
+
 // ---------- Расширения: индикатор WWV и разметка волн (регистрируются один раз) ----------
 
 let extensionsReady = false;
@@ -120,6 +185,35 @@ function registerExtensions(k) {
           borderColor: color, borderSize: st.size || 1, borderStyle: st.style || "solid",
         },
       }];
+    },
+  });
+
+  // Знаки ⚡ над барами с экстремальным объёмом — рисуются на свечной панели
+  k.registerIndicator({
+    name: "XVOL",
+    shortName: "⚡Объём",
+    calcParams: ["{}"],
+    figures: [],
+    calc: (list, { calcParams }) => {
+      let s = {};
+      try { s = JSON.parse(calcParams[0]) ?? {}; } catch { /* дефолты */ }
+      return xvolEval(list, s);
+    },
+    draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
+      const res = indicator.result ?? [];
+      const from = Math.max(0, Math.floor(visibleRange?.from ?? 0));
+      const to = Math.min(res.length, Math.ceil(visibleRange?.to ?? res.length));
+      ctx.save();
+      ctx.font = "13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#e0a83a";
+      for (let i = from; i < to; i++) {
+        if (!res[i]?.mark) continue;
+        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - 4);
+      }
+      ctx.restore();
+      return true; // фигуры по умолчанию не рисуем
     },
   });
 
@@ -588,6 +682,27 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       for (const id of posIds.splice(0)) if (id) chart.removeOverlay({ id });
       this.setTpSl({ tp: null, sl: null });
       this.setPnlTag(null);
+    },
+
+    // Индикатор экстремальных объёмов: s = настройки или {on:false} — убрать
+    setXvol(s) {
+      const norm = (got) => (got instanceof Map ? got.get("XVOL") : Array.isArray(got) ? got[0] : got);
+      const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "XVOL"));
+      if (!s?.on) {
+        if (has) chart.removeIndicator("candle_pane", "XVOL");
+        return;
+      }
+      const param = JSON.stringify(s);
+      if (has) chart.overrideIndicator({ name: "XVOL", calcParams: [param] }, "candle_pane");
+      else chart.createIndicator({
+        name: "XVOL", calcParams: [param],
+        styles: { tooltip: { showRule: "none" } }, // сырые настройки в легенде не показываем
+      }, true, { id: "candle_pane" });
+    },
+    xvolCount() {
+      const got = chart.getIndicatorByPaneId?.("candle_pane", "XVOL");
+      const ind = got instanceof Map ? got.get("XVOL") : Array.isArray(got) ? got[0] : got;
+      return (ind?.result ?? []).filter((r) => r?.mark).length;
     },
 
     // Плашка uPnL/ROI у линии входа: tag = {value, text, positive} или null

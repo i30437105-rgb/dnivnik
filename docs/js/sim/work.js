@@ -5,7 +5,7 @@ import { esc, fmtRu, notify, confirmToast } from "../util.js";
 import * as eng from "./engine.js";
 import * as sapi from "./simapi.js";
 import { TIMEFRAMES, tfById, aggregateBars, loadKlines } from "./data.js";
-import { createSimChart, pricePrecision, withAlpha } from "./chart.js";
+import { createSimChart, pricePrecision, withAlpha, xvolInfo } from "./chart.js";
 
 let W = null;
 
@@ -39,6 +39,18 @@ const noteStyles = () => {
 const alphaOf = (rgba) => {
   const m = /rgba?\([^)]*?,\s*([\d.]+)\)/.exec(rgba ?? "");
   return m ? Math.round(Number(m[1]) * 100) : 85;
+};
+
+// Настройки индикатора экстремальных объёмов (XVOL)
+const XVOL_DEF = { on: false, mode: "rel", days: 1, mult: 2, from: null, to: null };
+const xvolSettings = () => {
+  try { return { ...XVOL_DEF, ...(JSON.parse(localStorage.getItem("sim-xvol")) ?? {}) }; }
+  catch { return { ...XVOL_DEF }; }
+};
+const saveXvol = (patch) => {
+  const s = { ...xvolSettings(), ...patch };
+  try { localStorage.setItem("sim-xvol", JSON.stringify(s)); } catch { /* квота */ }
+  return s;
 };
 
 const stylesFromSaved = (name) => {
@@ -97,6 +109,7 @@ export function mountWork(ctx) {
           </div>
           <div class="sim-tools">
             ${TOOLS.map((t) => `<button class="tool" data-draw="${t.name}" title="${t.title}">${t.icon}</button>`).join("")}
+            <button class="tool" id="sw-xvol" title="Экстремальные объёмы — знак ⚡ над баром">⚡</button>
             <button class="tool" id="sw-wavelvl" title="Уровень волновой разметки: 1 старший ((1)) → 2 (1) → 3 просто → 4 римские"><span class="tld">ур.${waveLevel()}</span></button>
             <button class="tool" id="sw-clear" title="Стереть разметку">${svg('<path d="m14 5 5 5-9 9H5v-5Z"/><path d="M4 19h9"/>')}</button>
           </div>
@@ -104,6 +117,22 @@ export function mountWork(ctx) {
         </div>
         <div class="sim-chartwrap">
           <div id="sim-chart"></div>
+          <div id="sw-xvolbox" class="sim-xvolbox" hidden>
+            <label class="xv-row"><input type="checkbox" id="xv-on"> Экстремальные объёмы ⚡</label>
+            <div class="seg" id="xv-mode">
+              <button class="btn" data-m="rel">Кратность</button>
+              <button class="btn" data-m="abs">Диапазон</button>
+            </div>
+            <label class="xv-row">Прошлый период, сут
+              <input id="xv-days" type="number" min="1" max="30" step="1" inputmode="numeric"></label>
+            <label class="xv-row xv-rel">Множитель ×
+              <input id="xv-mult" type="number" min="1" step="0.5" inputmode="decimal"></label>
+            <label class="xv-row xv-abs" hidden>Объём от
+              <input id="xv-from" type="number" min="0" step="any" inputmode="decimal"></label>
+            <label class="xv-row xv-abs" hidden>до
+              <input id="xv-to" type="number" min="0" step="any" placeholder="без границы" inputmode="decimal"></label>
+            <div class="muted num" id="xv-info"></div>
+          </div>
           <div id="sw-ovbar" class="sim-ovbar" hidden>
             ${["#b598fb", "#ece7df", "#9b9389", "#4cc47a", "#a3e635", "#2dd4bf",
                "#4db8ff", "#5c7cfa", "#f06292", "#f0553f", "#ff9040", "#e0a83a"].map((c) =>
@@ -218,6 +247,57 @@ export function mountWork(ctx) {
   $("#sw-clear").onclick = async () => {
     if (await confirmToast("Стереть всю разметку на графике?", "Стереть")) W.chartApi.clearDrawings();
   };
+
+  // Экстремальные объёмы: панель настроек + применение
+  W.xvolSeen = new Set(); // по каким барам уже оповещали (ключ ТФ+время)
+  const xvBox = $("#sw-xvolbox");
+  const xvFill = () => {
+    const s = xvolSettings();
+    xvBox.querySelector("#xv-on").checked = s.on;
+    xvBox.querySelectorAll("#xv-mode .btn").forEach((b) => b.classList.toggle("on", b.dataset.m === s.mode));
+    xvBox.querySelector("#xv-days").value = String(s.days);
+    xvBox.querySelector("#xv-mult").value = String(s.mult);
+    xvBox.querySelector("#xv-from").value = s.from ?? "";
+    xvBox.querySelector("#xv-to").value = s.to ?? "";
+    xvBox.querySelectorAll(".xv-rel").forEach((x) => x.hidden = s.mode !== "rel");
+    xvBox.querySelectorAll(".xv-abs").forEach((x) => x.hidden = s.mode !== "abs");
+    $("#sw-xvol").classList.toggle("on", s.on);
+  };
+  const xvApply = () => {
+    const s = xvolSettings();
+    W.chartApi.setXvol(s);
+    xvUpdateInfo();
+    $("#sw-xvol").classList.toggle("on", s.on);
+  };
+  const xvUpdateInfo = () => {
+    const el = xvBox.querySelector("#xv-info");
+    if (!el || xvBox.hidden) return;
+    const s = xvolSettings();
+    const inf = xvolInfo(viewBars(), s.days);
+    el.textContent = inf.avg == null
+      ? "Нет данных за прошлый период (мало истории)"
+      : `Средний бар: ${fmtRu(inf.avg, 1)} · пик: ${fmtRu(inf.peak ?? 0, 1)} — за ${s.days} сут на текущем ТФ`;
+  };
+  $("#sw-xvol").onclick = () => {
+    xvBox.hidden = !xvBox.hidden;
+    if (!xvBox.hidden) { xvFill(); xvUpdateInfo(); }
+  };
+  xvBox.querySelector("#xv-on").onchange = (e) => { saveXvol({ on: e.target.checked }); xvApply(); };
+  xvBox.querySelectorAll("#xv-mode .btn").forEach((b) => b.onclick = () => {
+    saveXvol({ mode: b.dataset.m });
+    xvFill();
+    xvApply();
+  });
+  for (const [id, key] of [["#xv-days", "days"], ["#xv-mult", "mult"], ["#xv-from", "from"], ["#xv-to", "to"]]) {
+    xvBox.querySelector(id).onchange = (e) => {
+      const v = e.target.value === "" ? null : Number(e.target.value);
+      saveXvol({ [key]: v });
+      xvApply();
+    };
+  }
+  W.xvApply = xvApply;
+  W.xvUpdateInfo = xvUpdateInfo;
+  if (xvolSettings().on) xvApply();
 
   // Панель настроек выделенного инструмента: цвет, толщина, тип линии, удаление
   const ovbar = $("#sw-ovbar");
@@ -407,6 +487,7 @@ function refreshView() {
   W.chartApi.setBars(viewBars(), viewTfMs());
   W.chartApi.reanchorDrawings(); // разметка пересаживается по времени — не «едет»
   redrawPosition();
+  W.xvUpdateInfo?.(); // справка объёмов зависит от ТФ вида
   updateTicker();
 }
 
@@ -453,8 +534,32 @@ function next() {
     const exit = eng.checkExit(W.pos, bar); // SL/TP/ликвидация по high/low бара (§6.3)
     if (exit) closeTrade(exit.reason, exit.price, bar.timestamp);
   }
+  maybeNotifyXvol();
   updateTicker();
   return true;
+}
+
+// Оповещение при появлении бара с экстремальным объёмом (один раз на бар вида)
+function maybeNotifyXvol() {
+  const s = xvolSettings();
+  if (!s.on || !W) return;
+  const bars = viewBars();
+  const b = bars[bars.length - 1];
+  if (!b) return;
+  const v = b.volume ?? 0;
+  let mark = false;
+  let ratio = null;
+  if (s.mode === "abs") {
+    mark = Number(s.from) > 0 && v >= Number(s.from) && (!(Number(s.to) > 0) || v <= Number(s.to));
+  } else {
+    const { avg } = xvolInfo(bars, s.days);
+    if (avg != null) { mark = v >= (Number(s.mult) || 2) * avg; ratio = v / avg; }
+  }
+  if (!mark) return;
+  const key = `${W.viewTf}:${b.timestamp}`;
+  if (W.xvolSeen.has(key)) return;
+  W.xvolSeen.add(key);
+  notify(`⚡ Экстремальный объём: ${fmtRu(v, 1)}${ratio ? ` — ${fmtRu(ratio, 1)}× среднего` : ""}`, "info", 4000);
 }
 
 function startPlay() {

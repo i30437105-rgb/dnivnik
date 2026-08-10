@@ -934,3 +934,15 @@ body.lightbox-open .side { display: none; }
 .sim-ovbar.textnote .lineonly { display: none; }
 .sim-ovbar .ovrange { width: 74px; accent-color: var(--accent); }
 .sim-ovbar .ovb.on { background: var(--accent); color: #fff; }
+
+/* Симулятор: настройки экстремальных объёмов (XVOL) */
+.sim-xvolbox { position: absolute; top: 8px; right: 8px; z-index: 25; width: 250px;
+  display: flex; flex-direction: column; gap: 9px; padding: 12px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow-pop); font-size: var(--fs-13); }
+.sim-xvolbox .xv-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; color: var(--text-2); cursor: default; }
+.sim-xvolbox .xv-row input[type="number"] { width: 92px; }
+.sim-xvolbox .xv-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+.sim-xvolbox #xv-info { font-size: 12px; }
+.sim-tools .tool.on { background: var(--accent); color: #fff; }
