@@ -393,14 +393,29 @@ function registerExtensions(k) {
       ctx.save();
       ctx.font = "600 11px sans-serif";
       ctx.textAlign = "center";
+      const placed = []; // bbox уже нарисованных цифр — наезды расталкиваем по вертикали
       for (let i = from; i < to; i++) {
         const r = res[i];
         if (r?.label == null) continue;
         const v = r.label;
         const txt = (v >= 100 ? String(Math.round(v)) : String(+v.toFixed(1))) + (r.live ? "_" : "");
+        const w = ctx.measureText(txt).width;
+        const x = xAxis.convertToPixel(i);
+        let y = yAxis.convertToPixel(r.price) + (r.up ? -6 : 6);
+        const bboxAt = (yy) =>
+          r.up
+            ? { l: x - w / 2, r: x + w / 2, t: yy - 12, b: yy }
+            : { l: x - w / 2, r: x + w / 2, t: yy, b: yy + 12 };
+        for (let tries = 0; tries < 4; tries++) {
+          const b = bboxAt(y);
+          const clash = placed.some((p) => b.l < p.r + 2 && b.r > p.l - 2 && b.t < p.b + 1 && b.b > p.t - 1);
+          if (!clash) break;
+          y += r.up ? -13 : 13; // дальше от бара, пока не освободится место
+        }
+        placed.push(bboxAt(y));
         ctx.fillStyle = r.up ? "#4cc47a" : "#f0553f";
         ctx.textBaseline = r.up ? "bottom" : "top";
-        ctx.fillText(txt, xAxis.convertToPixel(i), yAxis.convertToPixel(r.price) + (r.up ? -6 : 6));
+        ctx.fillText(txt, x, y);
       }
       ctx.restore();
       return true;
