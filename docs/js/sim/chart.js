@@ -79,6 +79,16 @@ export function xvolEval(list, s) {
   });
 }
 
+// Компактные объёмы: 10347540 → «10.3M», 686705 → «687K» — на любом активе читаемо
+export function fmtVolShort(v) {
+  const fmt3 = (x) => (x >= 100 ? String(Math.round(x)) : String(+x.toFixed(1)));
+  const a = Math.abs(v);
+  if (a >= 1e9) return fmt3(v / 1e9) + "B";
+  if (a >= 1e6) return fmt3(v / 1e6) + "M";
+  if (a >= 1e3) return fmt3(v / 1e3) + "K";
+  return fmt3(v);
+}
+
 // Бары, над которыми стоит зелёная цифра волны (WWVN) — чтобы знак ⚡ не
 // накладывался на текст, он рисуется выше цифры на таких барах
 let wwvnUpTs = new Set();
@@ -397,8 +407,7 @@ function registerExtensions(k) {
       for (let i = from; i < to; i++) {
         const r = res[i];
         if (r?.label == null) continue;
-        const v = r.label;
-        const txt = (v >= 100 ? String(Math.round(v)) : String(+v.toFixed(1))) + (r.live ? "_" : "");
+        const txt = fmtVolShort(r.label) + (r.live ? "_" : "");
         const w = ctx.measureText(txt).width;
         const x = xAxis.convertToPixel(i);
         let y = yAxis.convertToPixel(r.price) + (r.up ? -6 : 6);
