@@ -75,9 +75,13 @@ export function xvolEval(list, s) {
     } else if (base != null) {
       mark = v >= (Number(s.mult) || 2) * base;
     }
-    return { mark, base, ratio: base ? v / base : null, high: b.high };
+    return { mark, base, ratio: base ? v / base : null, high: b.high, ts: b.timestamp };
   });
 }
+
+// Бары, над которыми стоит зелёная цифра волны (WWVN) — чтобы знак ⚡ не
+// накладывался на текст, он рисуется выше цифры на таких барах
+let wwvnUpTs = new Set();
 
 // Справка для последнего бара за прошлые days суток: три ориентира —
 // средний пиковый (по topN самым объёмным барам), общий средний,
@@ -311,7 +315,9 @@ function registerExtensions(k) {
       ctx.fillStyle = "#e0a83a";
       for (let i = from; i < to; i++) {
         if (!res[i]?.mark) continue;
-        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - 4);
+        // если на баре стоит цифра волны — знак поднимаем выше, чтобы не перекрывал текст
+        const lift = wwvnUpTs.has(res[i].ts) ? 21 : 4;
+        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - lift);
       }
       ctx.restore();
       return true; // фигуры по умолчанию не рисуем
@@ -368,8 +374,16 @@ function registerExtensions(k) {
     calc: (list, { calcParams }) => {
       const { waves, current } = weisWavesCalc(list, calcParams[0] ?? 14);
       const out = list.map(() => ({}));
-      for (const w of waves) out[w.extIdx] = { label: w.vol, up: w.dir > 0, price: w.extPrice };
-      if (current) out[current.extIdx] = { label: current.vol, up: current.dir > 0, price: current.extPrice, live: true };
+      const upSet = new Set();
+      for (const w of waves) {
+        out[w.extIdx] = { label: w.vol, up: w.dir > 0, price: w.extPrice };
+        if (w.dir > 0) upSet.add(list[w.extIdx].timestamp);
+      }
+      if (current) {
+        out[current.extIdx] = { label: current.vol, up: current.dir > 0, price: current.extPrice, live: true };
+        if (current.dir > 0) upSet.add(list[current.extIdx].timestamp);
+      }
+      wwvnUpTs = upSet; // XVOL приподнимет ⚡ над этими барами
       return out;
     },
     draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
@@ -483,7 +497,9 @@ export function createSimChart(el, hooks = {}, opts = {}) {
     indicator: {
       bars: [{ upColor: "rgba(76,196,122,.55)", downColor: "rgba(240,85,63,.5)", noChangeColor: axis }],
       lines: [{ color: css("--accent-text") }, { color: css("--warn") }, { color: up }],
-      tooltip: { text: { color: axis } },
+      // имена/параметры индикаторов в легенде не показываем (у XVOL там сырой JSON),
+      // значения (VOLUME, Волна) остаются
+      tooltip: { text: { color: axis }, showName: false, showParams: false },
     },
     xAxis: { axisLine: { color: border }, tickLine: { color: border }, tickText: { color: axis } },
     yAxis: { axisLine: { color: border }, tickLine: { color: border }, tickText: { color: axis } },
@@ -808,12 +824,10 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       const norm = (got) => (got instanceof Map ? got.get("WWVN") : Array.isArray(got) ? got[0] : got);
       const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "WWVN"));
       if (on && !has) {
-        chart.createIndicator({
-          name: "WWVN", calcParams: [14],
-          styles: { tooltip: { showRule: "none" } },
-        }, true, { id: "candle_pane" });
+        chart.createIndicator({ name: "WWVN", calcParams: [14] }, true, { id: "candle_pane" });
       } else if (!on && has) {
         chart.removeIndicator("candle_pane", "WWVN");
+        wwvnUpTs = new Set(); // цифр больше нет — ⚡ возвращается к бару
       }
     },
     wwvnCount() {
@@ -832,10 +846,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       }
       const param = JSON.stringify(s);
       if (has) chart.overrideIndicator({ name: "XVOL", calcParams: [param] }, "candle_pane");
-      else chart.createIndicator({
-        name: "XVOL", calcParams: [param],
-        styles: { tooltip: { showRule: "none" } }, // сырые настройки в легенде не показываем
-      }, true, { id: "candle_pane" });
+      else chart.createIndicator({ name: "XVOL", calcParams: [param] }, true, { id: "candle_pane" });
     },
     xvolCount() {
       const got = chart.getIndicatorByPaneId?.("candle_pane", "XVOL");
