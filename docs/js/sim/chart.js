@@ -576,6 +576,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   let lastDrawn = null;     // оверлей, который сейчас рисуется (для finishDrawing)
   const posIds = [];        // линии открытой позиции
   const tpsl = { tp: null, sl: null }; // перетаскиваемые уровни
+  const ghost = { tp: null, sl: null }; // заготовки TP/SL — потянул и уровень установлен
   let pnlId = null;         // плашка uPnL у линии входа
 
   // Канон разметки — свой реестр: точки хранятся как (timestamp, value).
@@ -643,11 +644,11 @@ export function createSimChart(el, hooks = {}, opts = {}) {
     return id ?? null;
   };
 
-  const tpslLine = (kind, value) => chart.createOverlay({
+  const tpslLine = (kind, value, faded = false) => chart.createOverlay({
     name: "priceLine", points: [{ value }],
     styles: {
-      line: { color: kind === "tp" ? up : down, style: "dashed" },
-      text: { backgroundColor: kind === "tp" ? up : down, color: "#fff" },
+      line: { color: faded ? withAlpha(kind === "tp" ? up : down, 0.4) : kind === "tp" ? up : down, style: "dashed" },
+      text: { backgroundColor: faded ? withAlpha(kind === "tp" ? up : down, 0.4) : kind === "tp" ? up : down, color: "#fff" },
     },
     onPressedMoveEnd: (e) => {
       const v = e.overlay.points?.[0]?.value;
@@ -854,6 +855,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
     hidePosition() {
       for (const id of posIds.splice(0)) if (id) chart.removeOverlay({ id });
       this.setTpSl({ tp: null, sl: null });
+      this.setTpSlGhost({ tp: null, sl: null });
       this.setPnlTag(null);
     },
 
@@ -925,6 +927,20 @@ export function createSimChart(el, hooks = {}, opts = {}) {
           tpsl[kind] = tpslLine(kind, value);
         } else if (value != null && tpsl[kind]) {
           chart.overrideOverlay({ id: tpsl[kind], points: [{ value }] });
+        }
+      }
+    },
+    // Заготовки TP/SL: тусклые перетаскиваемые линии, когда уровень ещё не задан —
+    // потянул заготовку, и onTpSlDrag превращает её в настоящий уровень
+    setTpSlGhost({ tp, sl }) {
+      for (const [kind, value] of [["tp", tp], ["sl", sl]]) {
+        if (value == null && ghost[kind]) {
+          chart.removeOverlay({ id: ghost[kind] });
+          ghost[kind] = null;
+        } else if (value != null && !ghost[kind]) {
+          ghost[kind] = tpslLine(kind, value, true);
+        } else if (value != null && ghost[kind]) {
+          chart.overrideOverlay({ id: ghost[kind], points: [{ value }] });
         }
       }
     },

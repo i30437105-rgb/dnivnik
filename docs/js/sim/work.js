@@ -508,6 +508,8 @@ async function switchViewTf(tfId) {
   hideOvBar();
   W.ctx.root.querySelectorAll("#sw-vtf .btn").forEach((x) =>
     x.classList.toggle("on", x.dataset.vtf === tfId));
+  // первая загрузка истории старшего ТФ с Bybit может занять секунды — говорим об этом
+  if (tfId !== W.ctx.tf.id && !W.pastBars[tfId]) notify(`Загружаю историю ${tfById(tfId).label}…`, "info", 2500);
   await ensurePast(tfId);
   if (W?.viewTf === tfId) refreshView();
 }
@@ -549,7 +551,22 @@ function redrawPosition() {
   W.chartApi.showPosition({
     side: W.pos.side, entryPrice: W.pos.entryPrice, entryTs: ts, liq: eng.liqPrice(W.pos),
   });
+  syncTpSlLines();
+}
+
+// Линии TP/SL + заготовки: не заданные уровни показываются тусклыми линиями
+// в ±3 средних размаха бара от входа (всегда в зоне видимости) — потянул
+// заготовку, и уровень установлен, как на бирже
+function syncTpSlLines() {
+  if (!W.pos) return;
   W.chartApi.setTpSl({ tp: W.pos.tpPrice ?? null, sl: W.pos.slPrice ?? null });
+  const bars = viewBars().slice(-20);
+  const rng = bars.reduce((s, b) => s + (b.high - b.low), 0) / Math.max(1, bars.length);
+  const dir = W.pos.side === "long" ? 1 : -1;
+  W.chartApi.setTpSlGhost({
+    tp: W.pos.tpPrice == null ? W.pos.entryPrice + dir * rng * 3 : null,
+    sl: W.pos.slPrice == null ? W.pos.entryPrice - dir * rng * 3 : null,
+  });
 }
 
 // Сессия пишется в базу лениво — при первой реальной сделке (пустые сессии не плодим)
@@ -746,13 +763,13 @@ async function applyTpSl(kind, price, source) {
       : (pos.side === "long" ? price < pos.entryPrice : price > pos.entryPrice);
     if (!valid) {
       notify(`${kind.toUpperCase()} должен быть ${kind === "tp" ? "в прибыльной" : "в убыточной"} стороне от входа`, "error", 5000);
-      W.chartApi.setTpSl({ tp: pos.tpPrice ?? null, sl: pos.slPrice ?? null }); // вернуть линию
+      syncTpSlLines(); // вернуть линии и заготовки на место
       if (source !== "drag") renderPanel();
       return;
     }
   }
   W.pos = { ...pos, [kind === "tp" ? "tpPrice" : "slPrice"]: price };
-  W.chartApi.setTpSl({ tp: W.pos.tpPrice ?? null, sl: W.pos.slPrice ?? null });
+  syncTpSlLines();
   renderPanel();
   try {
     await sapi.updateSimTrade(pos.tradeId, { [kind === "tp" ? "tp_price" : "sl_price"]: price });
@@ -911,6 +928,7 @@ async function openTrade(side) {
     return notify("Не удалось открыть сделку: " + e.message, "error", 6000);
   }
   W.pos = { ...pos, tradeId: trade.id };
+  syncTpSlLines(); // заготовки TP/SL для незаданных уровней — выставление с графика
   if (shot) sapi.uploadSimShot(trade.id, "entry", shot)
     .catch((e) => notify("Скрин входа не сохранился: " + e.message, "error", 6000));
   renderPanel();
