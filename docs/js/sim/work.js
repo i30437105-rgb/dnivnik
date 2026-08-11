@@ -42,7 +42,7 @@ const alphaOf = (rgba) => {
 };
 
 // Настройки индикатора экстремальных объёмов (XVOL)
-const XVOL_DEF = { on: false, mode: "rel", days: 1, mult: 2, base: "avg", from: null, to: null, top: 10 };
+const XVOL_DEF = { on: false, mode: "rel", days: 1, mult: 2, base: "avg", from: null, to: null, top: 10, topOn: false, topDays: 1, topCnt: 3 };
 const xvolSettings = () => {
   try { return { ...XVOL_DEF, ...(JSON.parse(localStorage.getItem("sim-xvol")) ?? {}) }; }
   catch { return { ...XVOL_DEF }; }
@@ -140,6 +140,11 @@ export function mountWork(ctx) {
               <input id="xv-to" type="number" min="0" step="any" placeholder="без границы" inputmode="decimal"></label>
             <label class="xv-row">Выборка топ/низ, баров
               <input id="xv-top" type="number" min="1" max="100" step="1" inputmode="numeric"></label>
+            <label class="xv-row"><input type="checkbox" id="xv-topon"> Топ-объёмы 🔥 (самые большие бары)</label>
+            <label class="xv-row">🔥 период, сут
+              <input id="xv-topdays" type="number" min="0.5" max="30" step="0.5" inputmode="decimal"></label>
+            <label class="xv-row">🔥 баров в топе
+              <input id="xv-topcnt" type="number" min="1" max="10" step="1" inputmode="numeric"></label>
             <div class="muted num" id="xv-info"></div>
           </div>
           <div id="sw-wwvnbox" class="sim-xvolbox" hidden>
@@ -276,15 +281,18 @@ export function mountWork(ctx) {
     xvBox.querySelector("#xv-from").value = s.from ?? "";
     xvBox.querySelector("#xv-to").value = s.to ?? "";
     xvBox.querySelector("#xv-top").value = String(s.top ?? 10);
+    xvBox.querySelector("#xv-topon").checked = !!s.topOn;
+    xvBox.querySelector("#xv-topdays").value = String(s.topDays ?? 1);
+    xvBox.querySelector("#xv-topcnt").value = String(s.topCnt ?? 3);
     xvBox.querySelectorAll(".xv-rel").forEach((x) => x.hidden = s.mode !== "rel");
     xvBox.querySelectorAll(".xv-abs").forEach((x) => x.hidden = s.mode !== "abs");
-    $("#sw-xvol").classList.toggle("on", s.on);
+    $("#sw-xvol").classList.toggle("on", s.on || s.topOn);
   };
   const xvApply = () => {
     const s = xvolSettings();
     W.chartApi.setXvol(s);
     xvUpdateInfo();
-    $("#sw-xvol").classList.toggle("on", s.on);
+    $("#sw-xvol").classList.toggle("on", s.on || s.topOn);
   };
   const xvUpdateInfo = () => {
     const el = xvBox.querySelector("#xv-info");
@@ -307,7 +315,8 @@ export function mountWork(ctx) {
     xvFill();
     xvApply();
   });
-  for (const [id, key] of [["#xv-days", "days"], ["#xv-mult", "mult"], ["#xv-from", "from"], ["#xv-to", "to"], ["#xv-top", "top"]]) {
+  xvBox.querySelector("#xv-topon").onchange = (e) => { saveXvol({ topOn: e.target.checked }); xvApply(); };
+  for (const [id, key] of [["#xv-days", "days"], ["#xv-mult", "mult"], ["#xv-from", "from"], ["#xv-to", "to"], ["#xv-top", "top"], ["#xv-topdays", "topDays"], ["#xv-topcnt", "topCnt"]]) {
     xvBox.querySelector(id).onchange = (e) => {
       const v = e.target.value === "" ? null : Number(e.target.value);
       saveXvol({ [key]: v });

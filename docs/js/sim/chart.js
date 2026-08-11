@@ -75,7 +75,9 @@ export function xvolEval(list, s) {
     } else if (base != null) {
       mark = v >= (Number(s.mult) || 2) * base;
     }
-    return { mark, base, ratio: base ? v / base : null, high: b.high, ts: b.timestamp };
+    // при выключенном ⚡ (только топ-объёмы 🔥) знаки не ставятся
+    if (s.on === false) mark = false;
+    return { mark, base, ratio: base ? v / base : null, high: b.high, ts: b.timestamp, v };
   });
 }
 
@@ -92,6 +94,8 @@ export function fmtVolShort(v) {
 // Бары со знаком ⚡ (XVOL) — цифра волны (WWVN) на таких барах и их соседях
 // поднимается вторым уровнем выше знака, чтобы не перекрывать его
 let xvolMarkTs = new Set();
+// Бары топ-объёмов 🔥 — этаж между ⚡ и цифрой волны
+let xvolTopTs = new Set();
 
 // Справка для последнего бара за прошлые days суток: три ориентира —
 // средний пиковый (по topN самым объёмным барам), общий средний,
@@ -316,6 +320,15 @@ function registerExtensions(k) {
       try { s = JSON.parse(calcParams[0]) ?? {}; } catch { /* дефолты */ }
       const out = xvolEval(list, s);
       xvolMarkTs = new Set(out.filter((r) => r.mark).map((r) => r.ts));
+      // топ-объёмы 🔥: K самых объёмных баров скользящего окна N суток от последнего бара
+      xvolTopTs = new Set();
+      if (s.topOn && out.length) {
+        const from = out[out.length - 1].ts - Math.max(0.1, Number(s.topDays) || 1) * DAY_MS;
+        const top = out.filter((r) => r.ts >= from)
+          .sort((a, b) => b.v - a.v)
+          .slice(0, Math.max(1, Number(s.topCnt) || 3));
+        xvolTopTs = new Set(top.map((r) => r.ts));
+      }
       return out;
     },
     draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
@@ -326,10 +339,20 @@ function registerExtensions(k) {
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
-      ctx.fillStyle = "#e0a83a";
       for (let i = from; i < to; i++) {
-        if (!res[i]?.mark) continue;
-        ctx.fillText("⚡", xAxis.convertToPixel(i), yAxis.convertToPixel(res[i].high) - 4);
+        const r = res[i];
+        if (!r) continue;
+        const x = xAxis.convertToPixel(i);
+        const yHigh = yAxis.convertToPixel(r.high);
+        if (r.mark) {
+          ctx.fillStyle = "#e0a83a";
+          ctx.fillText("⚡", x, yHigh - 4);
+        }
+        // 🔥 топ-объёма — этажом выше знака ⚡, если тот на баре
+        if (xvolTopTs.has(r.ts)) {
+          ctx.fillStyle = "#f0553f";
+          ctx.fillText("🔥", x, yHigh - (r.mark ? 21 : 4));
+        }
       }
       ctx.restore();
       return true; // фигуры по умолчанию не рисуем
@@ -419,11 +442,16 @@ function registerExtensions(k) {
           if (!r.up && q.l != null) ref = Math.min(ref, q.l);
         }
         let y = yAxis.convertToPixel(ref) + (r.up ? -6 : 6);
-        // ⚡ на баре вершины или соседях — цифра уходит вторым уровнем выше знака
+        // этажи над баром: ⚡ у бара → 🔥 выше → цифра волны верхним уровнем
         if (r.up) {
-          for (let j = Math.max(0, i - 1); j <= Math.min(res.length - 1, i + 1); j++) {
-            if (xvolMarkTs.has(res[j]?.ts)) { y -= 16; break; }
-          }
+          const near = (set) => {
+            for (let j = Math.max(0, i - 1); j <= Math.min(res.length - 1, i + 1); j++) {
+              if (set.has(res[j]?.ts)) return true;
+            }
+            return false;
+          };
+          if (near(xvolMarkTs)) y -= 16;
+          if (near(xvolTopTs)) y -= 17;
         }
         const bboxAt = (yy) =>
           r.up
@@ -882,13 +910,14 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       return (ind?.result ?? []).filter((r) => r?.label != null).length;
     },
 
-    // Индикатор экстремальных объёмов: s = настройки или {on:false} — убрать
+    // Индикатор экстремальных объёмов (⚡ и топ-🔥): убирается, когда выключено всё
     setXvol(s) {
       const norm = (got) => (got instanceof Map ? got.get("XVOL") : Array.isArray(got) ? got[0] : got);
       const has = !!norm(chart.getIndicatorByPaneId?.("candle_pane", "XVOL"));
-      if (!s?.on) {
+      if (!s?.on && !s?.topOn) {
         if (has) chart.removeIndicator("candle_pane", "XVOL");
         xvolMarkTs = new Set(); // знаков больше нет — цифры волн возвращаются к бару
+        xvolTopTs = new Set();
         return;
       }
       const param = JSON.stringify(s);
@@ -900,6 +929,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       const ind = got instanceof Map ? got.get("XVOL") : Array.isArray(got) ? got[0] : got;
       return (ind?.result ?? []).filter((r) => r?.mark).length;
     },
+    xvolTopCount() { return xvolTopTs.size },
 
     // Плашка uPnL/ROI у линии входа: tag = {value, text, positive} или null
     setPnlTag(tag) {
