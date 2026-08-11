@@ -336,7 +336,7 @@ function registerExtensions(k) {
       const from = Math.max(0, Math.floor(visibleRange?.from ?? 0));
       const to = Math.min(res.length, Math.ceil(visibleRange?.to ?? res.length));
       ctx.save();
-      ctx.font = "13px sans-serif";
+      ctx.font = "9px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
       for (let i = from; i < to; i++) {
@@ -344,14 +344,15 @@ function registerExtensions(k) {
         if (!r) continue;
         const x = xAxis.convertToPixel(i);
         const yHigh = yAxis.convertToPixel(r.high);
+        // мини-фигуры вместо эмодзи — не перегружают график при сжатии
         if (r.mark) {
           ctx.fillStyle = "#e0a83a";
-          ctx.fillText("⚡", x, yHigh - 4);
+          ctx.fillText("▲", x, yHigh - 3);
         }
-        // 🔥 топ-объёма — этажом выше знака ⚡, если тот на баре
+        // ромб топ-объёма — этажом выше треугольника, если тот на баре
         if (xvolTopTs.has(r.ts)) {
           ctx.fillStyle = "#f0553f";
-          ctx.fillText("🔥", x, yHigh - (r.mark ? 21 : 4));
+          ctx.fillText("◆", x, yHigh - (r.mark ? 15 : 3));
         }
       }
       ctx.restore();
@@ -450,8 +451,8 @@ function registerExtensions(k) {
             }
             return false;
           };
-          if (near(xvolMarkTs)) y -= 16;
-          if (near(xvolTopTs)) y -= 17;
+          if (near(xvolMarkTs)) y -= 13;
+          if (near(xvolTopTs)) y -= 13;
         }
         const bboxAt = (yy) =>
           r.up
