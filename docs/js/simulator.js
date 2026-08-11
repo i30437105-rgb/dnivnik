@@ -4,7 +4,7 @@
 import { esc, fmtRu, notify, confirmToast, openModal } from "./util.js";
 import { TIMEFRAMES, tfById, loadKlines, loadSymbols } from "./sim/data.js";
 import * as sapi from "./sim/simapi.js";
-import { mountWork, workAlive, workResize } from "./sim/work.js";
+import { mountWork, workAlive, workResize, loadLiveSession, dropLiveSession } from "./sim/work.js";
 import { renderStats } from "./sim/stats.js";
 
 let root;
@@ -68,6 +68,7 @@ async function renderHome() {
         <button id="sim-reset" class="btn ghost small">⟲ Обнулить депозит</button>
       </div>
     </div>
+    ${liveResumeBlock()}
     <div class="block sim-setup">
       <h3>Новая сессия <span class="muted">счёт «${esc(account.name)}»</span></h3>
       ${setupForm()}
@@ -84,8 +85,62 @@ async function renderHome() {
   body.querySelector("#sim-newacc").onclick = () => openAccountModal();
   body.querySelector("#sim-rename").onclick = renameAccount;
   body.querySelector("#sim-reset").onclick = resetAccount;
+  body.querySelector("#sim-resume") && (body.querySelector("#sim-resume").onclick = resumeSession);
+  body.querySelector("#sim-resume-del") && (body.querySelector("#sim-resume-del").onclick = async () => {
+    if (!(await confirmToast("Удалить сохранённую сессию? Продолжить её будет нельзя.", "Удалить"))) return;
+    dropLiveSession();
+    renderHome();
+  });
   bindSetup(body.querySelector(".sim-setup"));
   renderStats(body.querySelector("#sim-stats"), account);
+}
+
+// Блок «Незавершённая сессия» — если есть сохранённая для текущего счёта
+function liveResumeBlock() {
+  const live = loadLiveSession();
+  if (!live || live.accountId !== account.id) return "";
+  const tfLabel = tfById(live.spec.timeframe)?.label ?? live.spec.timeframe;
+  const posTxt = live.pos ? ` · открыта ${live.pos.side === "long" ? "лонг" : "шорт"}-позиция` : "";
+  return `
+    <div class="block">
+      <h3>Незавершённая сессия</h3>
+      <p class="muted num">${esc(live.spec.symbol)} · ${esc(tfLabel)} · сохранена ${new Date(live.savedAt).toLocaleString("ru-RU")}${posTxt}</p>
+      <div class="row" style="gap:8px">
+        <button id="sim-resume" class="btn primary">Продолжить</button>
+        <button id="sim-resume-del" class="btn ghost small">Удалить</button>
+      </div>
+    </div>`;
+}
+
+// Восстановление сессии из снапшота: свечи и история загружаются заново по датам
+async function resumeSession() {
+  const live = loadLiveSession();
+  if (!live) return renderHome();
+  const spec = live.spec;
+  const tf = tfById(spec.timeframe);
+  const fromMs = Date.parse(spec.from_ts);
+  const toMs = Date.parse(spec.to_ts);
+  const body = root.querySelector("#sim-body");
+  body.innerHTML = `<div class="loading">Восстанавливаю сессию…</div>`;
+  try {
+    const candles = await loadKlines(spec.symbol, spec.timeframe, fromMs, toMs);
+    if (candles.length < 30) throw new Error("не удалось загрузить свечи сессии");
+    const HISTORY_BARS = 1500;
+    let pre = [];
+    try {
+      pre = await loadKlines(spec.symbol, spec.timeframe, fromMs - HISTORY_BARS * tf.ms, fromMs - 1);
+    } catch { pre = []; } // без контекста сессия тоже работает
+    mountWork({
+      root: body,
+      account, spec, candles: [...pre, ...candles], preLen: pre.length, tf,
+      resume: live,
+      onBalance: (bal) => { account = { ...account, balance: bal }; },
+      onExit: () => renderHome(),
+    });
+  } catch (e) {
+    notify("Не получилось продолжить: " + e.message, "error", 7000);
+    renderHome();
+  }
 }
 
 // ---------- Создание / обнуление счетов ----------
@@ -254,6 +309,8 @@ async function startSession(el) {
 
   if (!symbol) return notify("Укажите пару", "error");
   if (!(fee >= 0)) return notify("Комиссия некорректна", "error");
+  // новая сессия перетирает снапшот незавершённой — не даём потерять её молча
+  if (loadLiveSession() && !(await confirmToast("Есть сохранённая незавершённая сессия — новая её удалит. Начать новую?", "Начать"))) return;
 
   let fromMs, toMs;
   const days = Number(el.querySelector("#ss-days").value) || 30;

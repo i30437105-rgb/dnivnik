@@ -83,12 +83,18 @@ const TOOLS = [
 export function mountWork(ctx) {
   // preLen — бары истории до старта сессии: контекст для разметки, replay идёт после них
   const preLen = Math.min(ctx.preLen ?? 0, Math.max(ctx.candles.length - 1, 0));
-  const idx = preLen > 0 ? preLen : Math.min(WARMUP, ctx.candles.length - 1);
+  let idx = preLen > 0 ? preLen : Math.min(WARMUP, ctx.candles.length - 1);
+  const rs = ctx.resume; // снапшот незавершённой сессии — продолжаем с места выхода
+  if (rs?.lastTs != null) {
+    const after = ctx.candles.findIndex((b) => b.timestamp > rs.lastTs);
+    idx = after === -1 ? ctx.candles.length : Math.max(after, idx);
+  }
   W = {
     ctx, idx, preLen,
-    pos: null, closed: [],
+    pos: rs?.pos ?? null, closed: rs?.closed ?? [],
+    sessionId: rs?.sessionId ?? null,
     timer: null, speed: 5,
-    balance: Number(ctx.account.balance),
+    balance: rs?.balance ?? Number(ctx.account.balance),
     dataEnded: false,
     chartApi: null,
     viewTf: ctx.tf.id, // ТФ отображения; replay всегда шагает торговым ТФ
@@ -182,6 +188,7 @@ export function mountWork(ctx) {
           </div>
           <span id="sw-progress" class="num muted"></span>
           <span class="spacer"></span>
+          <button id="sw-exit" class="btn ghost" title="Сессия сохранится — продолжить можно с главного экрана">Выйти</button>
           <button id="sw-end" class="btn ghost">Завершить сессию</button>
         </div>
       </div>
@@ -240,6 +247,7 @@ export function mountWork(ctx) {
   $("#sw-next").onclick = () => { stopPlay(); next(); };
   $("#sw-play").onclick = togglePlay;
   $("#sw-end").onclick = endSession;
+  $("#sw-exit").onclick = exitSession;
   ctx.root.querySelectorAll("#sw-speed .btn").forEach((b) => b.onclick = () => {
     W.speed = Number(b.dataset.s);
     ctx.root.querySelectorAll("#sw-speed .btn").forEach((x) => x.classList.toggle("on", x === b));
@@ -419,6 +427,8 @@ export function mountWork(ctx) {
 
   W.onResize = () => W.chartApi.resize();
   window.addEventListener("resize", W.onResize);
+  W.onUnload = () => saveLive(true); // закрыли вкладку — прогресс не теряется
+  window.addEventListener("beforeunload", W.onUnload);
   W.onKey = (e) => {
     if (!W || e.target.closest("input, textarea, select")) return;
     if (e.code === "ArrowRight") { stopPlay(); next(); e.preventDefault(); }
@@ -431,9 +441,15 @@ export function mountWork(ctx) {
   };
   document.addEventListener("keydown", W.onKey);
 
+  // восстановление после «Выйти»: разметка, позиция и линии — как было
+  if (rs) {
+    W.chartApi.importDrawings(rs.drawings);
+    if (W.pos) redrawPosition();
+  }
   renderPanel();
   renderSess();
   updateTicker();
+  saveLive(true);
 }
 
 const waveLevel = () =>
@@ -578,6 +594,45 @@ function syncTpSlLines() {
   });
 }
 
+// ---------- Сохранение незавершённой сессии (localStorage) ----------
+// Снапшот пишется на каждом шаге (не чаще раза в секунду) и при важных событиях;
+// удаляется только при «Завершить сессию». Позволяет выйти и продолжить позже.
+const LIVE_KEY = "sim-live";
+
+export const loadLiveSession = () => {
+  try { return JSON.parse(localStorage.getItem(LIVE_KEY)) ?? null; } catch { return null; }
+};
+export const dropLiveSession = () => localStorage.removeItem(LIVE_KEY);
+
+function saveLive(force = false) {
+  if (!W?.chartApi) return;
+  const now = Date.now();
+  if (!force && now - (W.lastSave ?? 0) < 1000) return;
+  W.lastSave = now;
+  try {
+    localStorage.setItem(LIVE_KEY, JSON.stringify({
+      v: 1,
+      accountId: W.ctx.account.id,
+      spec: W.ctx.spec,
+      lastTs: W.idx > 0 ? W.ctx.candles[W.idx - 1].timestamp : null,
+      sessionId: W.sessionId ?? null,
+      balance: W.balance,
+      closed: W.closed,
+      pos: W.pos,
+      drawings: W.chartApi.exportDrawings(),
+      savedAt: now,
+    }));
+  } catch { /* переполнение localStorage — сессия просто не сохранится */ }
+}
+
+// Выход без завершения: всё сохранено, продолжение — с главного экрана симулятора
+function exitSession() {
+  stopPlay();
+  saveLive(true);
+  notify("Сессия сохранена — продолжить можно с главного экрана");
+  cleanup(true);
+}
+
 // Сессия пишется в базу лениво — при первой реальной сделке (пустые сессии не плодим)
 async function ensureSession() {
   if (W.sessionId) return W.sessionId;
@@ -613,6 +668,7 @@ function next() {
   }
   maybeNotifyXvol();
   updateTicker();
+  saveLive(); // прогресс переживает перезагрузку страницы
   return true;
 }
 
@@ -780,6 +836,7 @@ async function applyTpSl(kind, price, source) {
   W.pos = { ...pos, [kind === "tp" ? "tpPrice" : "slPrice"]: price };
   syncTpSlLines();
   renderPanel();
+  saveLive(true);
   try {
     await sapi.updateSimTrade(pos.tradeId, { [kind === "tp" ? "tp_price" : "sl_price"]: price });
   } catch (e) { notify("Уровень не сохранился: " + e.message, "error", 6000); }
@@ -938,6 +995,7 @@ async function openTrade(side) {
   }
   W.pos = { ...pos, tradeId: trade.id };
   syncTpSlLines(); // заготовки TP/SL для незаданных уровней — выставление с графика
+  saveLive(true);
   if (shot) sapi.uploadSimShot(trade.id, "entry", shot)
     .catch((e) => notify("Скрин входа не сохранился: " + e.message, "error", 6000));
   renderPanel();
@@ -956,6 +1014,7 @@ async function closeTrade(reason, price, ts) {
   W.balance = W.balance + closed.pnl;
   renderPanel();
   renderSess();
+  saveLive(true);
   notify(`Сделка закрыта (${REASON_RU[reason] ?? reason}): ${money(closed.pnl)}`,
     closed.pnl < 0 ? "error" : "info");
 
@@ -988,12 +1047,14 @@ async function endSession() {
     try { await sapi.finishSession(W.sessionId); }
     catch (e) { notify("Сессия не пометилась завершённой: " + e.message, "error", 6000); }
   }
-  cleanup();
+  cleanup(false);
 }
 
-function cleanup() {
+function cleanup(keepLive) {
   stopPlay();
+  if (!keepLive) dropLiveSession(); // завершённая сессия продолжению не подлежит
   window.removeEventListener("resize", W.onResize);
+  window.removeEventListener("beforeunload", W.onUnload);
   document.removeEventListener("keydown", W.onKey);
   try { W.chartApi.destroy(); } catch { /* график уже убран из DOM */ }
   const exit = W.ctx.onExit;

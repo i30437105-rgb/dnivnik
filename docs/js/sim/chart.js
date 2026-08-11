@@ -743,6 +743,21 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       for (const [, e] of entries) if (e.points.length) createFromEntry(e);
     },
 
+    // Сериализация разметки для сохранения сессии (точки — канон timestamp/value)
+    exportDrawings() {
+      return [...registry.values()]
+        .filter((e) => e.points?.length)
+        .map((e) => ({
+          name: e.name,
+          extendData: e.extendData,
+          styles: e.styles ? JSON.parse(JSON.stringify(e.styles)) : undefined,
+          points: e.points.map((p) => ({ ...p })),
+        }));
+    },
+    importDrawings(list) {
+      for (const e of list ?? []) if (e?.name && e.points?.length) createFromEntry(e);
+    },
+
     // Копия элемента со сдвигом по цене (для построения каналов); возвращает {id, name}
     cloneDrawn(id) {
       const e = registry.get(id);
