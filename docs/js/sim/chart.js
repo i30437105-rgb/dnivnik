@@ -389,8 +389,9 @@ function registerExtensions(k) {
     calcParams: [14],
     figures: [{
       key: "wave", title: "Волна: ", type: "bar", baseValue: 0,
+      // klinecharts 9.8.10 отдаёт значения в current.indicatorData (проверено дебагом)
       styles: ({ current }) => ({
-        color: (current?.dir ?? 1) > 0 ? "rgba(76,196,122,.55)" : "rgba(240,85,63,.5)",
+        color: (current?.indicatorData?.dir ?? 1) > 0 ? "rgba(76,196,122,.55)" : "rgba(240,85,63,.5)",
       }),
     }],
     calc: (list, { calcParams }) => {
