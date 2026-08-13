@@ -7,6 +7,7 @@ import { initAnalytics } from "./analytics.js";
 import { initWaves } from "./waves.js";
 import { initChecklist } from "./checklist.js";
 import { initSimulator } from "./simulator.js";
+import { initTicks } from "./ticks.js";
 import { initReflection } from "./reflection.js";
 import { initSettings } from "./settings.js";
 import { esc } from "./util.js";
@@ -58,6 +59,7 @@ const ICONS = {
   waves: ic('<path d="M12 3.5c-2.2 0-4 1.7-4 3.9 0 1.4.7 2.4 1.4 3.2.6.7 1 1.3 1 2.2h3.2c0-.9.4-1.5 1-2.2.7-.8 1.4-1.8 1.4-3.2 0-2.2-1.8-3.9-4-3.9Z"/><path d="M10.4 16h3.2M11 19h2"/>'),
   checklist: ic('<path d="M9 4.5H7.2A2.2 2.2 0 0 0 5 6.7v11.6a2.2 2.2 0 0 0 2.2 2.2h9.6a2.2 2.2 0 0 0 2.2-2.2V6.7a2.2 2.2 0 0 0-2.2-2.2H15"/><path d="M9 3.6h6v2.6H9Z"/><path d="m8.6 12.2 2 2 4.4-4.4"/><path d="M9 17.4h6"/>'),
   simulator: ic('<path d="M7 4.5v3M7 15.5v3.5M17 6.5v2.5M17 16v3"/><rect x="5" y="7.5" width="4" height="8" rx="1.1"/><rect x="15" y="9" width="4" height="7" rx="1.1"/>'),
+  ticks: ic('<path d="M3 13h3.5l2.3-6.5 3.6 11 2.4-7H21"/>'),
   settings: ic('<path d="M4 7.5h4M12.5 7.5H20M4 16.5h7.5M16 16.5h4"/><circle cx="10" cy="7.5" r="2.3"/><circle cx="14" cy="16.5" r="2.3"/>'),
   reflection: ic('<path d="M20.5 3.5c-6.6-.4-12.1 2.6-14.6 8.7-.9 2.3-1.5 5-1.7 7.8 2.8-.2 5.5-.8 7.8-1.7 6.1-2.5 9.1-8 8.5-14.8Z"/><path d="M4.8 19.2C8.2 13.4 12.6 9.6 17 7.2"/>'),
   logout: ic('<path d="M12 3.5v8"/><path d="M6.6 6.3a7.5 7.5 0 1 0 10.8 0"/>'),
@@ -70,6 +72,7 @@ const TABS = [
   { id: "waves", label: "Волны — памятка", icon: ICONS.waves, init: initWaves },
   { id: "checklist", label: "Чек-лист", icon: ICONS.checklist, init: initChecklist },
   { id: "simulator", label: "Симулятор", icon: ICONS.simulator, init: initSimulator },
+  { id: "ticks", label: "Тиковый график", icon: ICONS.ticks, init: initTicks },
   { id: "reflection", label: "Рефлексия", icon: ICONS.reflection, init: initReflection },
   { id: "settings", label: "Настройки", icon: ICONS.settings, init: initSettings },
 ];
