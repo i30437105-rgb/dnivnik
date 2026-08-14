@@ -427,6 +427,10 @@ details.block[open] > summary { margin-bottom: 4px; }
 /* Десктоп: мобильные элементы скрыты */
 .only-mob, .stats-more, .bd-chips, .wnav { display: none; }
 
+/* Академия: закладки разделов — видны на любом экране (в отличие от мобильного .wnav) */
+.ac-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; }
+.ac-tabs .chip { font-size: 13.5px; padding: 9px 18px; }
+
 /* Чип общего вида (оглавление волн, категории рефлексии) */
 .chip { background: var(--bg-2); border: 1px solid var(--border-soft); color: var(--text-muted);
   font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 14px;

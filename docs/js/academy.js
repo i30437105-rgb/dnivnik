@@ -122,7 +122,7 @@ export function initAcademy(container) {
     <header class="pagehead">
       <div class="titles"><h1>Моя академия</h1><span class="sub">волны Эллиотта · наставники и школы цены</span></div>
     </header>
-    <nav class="wnav" id="ac-tabs">
+    <nav class="ac-tabs" id="ac-tabs">
       <button class="chip" data-at="waves">Волны Эллиотта</button>
       <button class="chip" data-at="mentors">Наставники</button>
     </nav>
