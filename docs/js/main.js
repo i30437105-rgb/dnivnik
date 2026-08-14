@@ -4,7 +4,7 @@ import { loadSettings } from "./api.js";
 import { initDiary } from "./diary.js";
 import { initVault } from "./vault.js";
 import { initAnalytics } from "./analytics.js";
-import { initWaves } from "./waves.js";
+import { initAcademy } from "./academy.js";
 import { initChecklist } from "./checklist.js";
 import { initSimulator } from "./simulator.js";
 import { initTicks } from "./ticks.js";
@@ -56,7 +56,7 @@ const ICONS = {
   diary: ic('<path d="M6.5 3.5h11a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5h-11"/><path d="M6.5 3.5A2.5 2.5 0 0 0 4 6v12a2.5 2.5 0 0 0 2.5 2.5"/><path d="M9 8h7M9 12h7M9 16h4"/>'),
   vault: ic('<path d="M4 9.5C4 8 5.2 6.8 6.7 6.8h10.6C18.8 6.8 20 8 20 9.5v7.7c0 1.5-1.2 2.7-2.7 2.7H6.7C5.2 19.9 4 18.7 4 17.2Z"/><path d="M8 6.8 9.6 4h4.8L16 6.8"/><path d="M15.8 13.4h1.6"/>'),
   analytics: ic('<path d="M4 20V10M9.3 20V4M14.7 20v-7M20 20V7"/>'),
-  waves: ic('<path d="M12 3.5c-2.2 0-4 1.7-4 3.9 0 1.4.7 2.4 1.4 3.2.6.7 1 1.3 1 2.2h3.2c0-.9.4-1.5 1-2.2.7-.8 1.4-1.8 1.4-3.2 0-2.2-1.8-3.9-4-3.9Z"/><path d="M10.4 16h3.2M11 19h2"/>'),
+  academy: ic('<path d="M12 4.2 2.8 8.9 12 13.6l9.2-4.7Z"/><path d="M6 11v4.6c0 1.3 2.7 2.6 6 2.6s6-1.3 6-2.6V11"/><path d="M21.2 9v4.5"/>'),
   checklist: ic('<path d="M9 4.5H7.2A2.2 2.2 0 0 0 5 6.7v11.6a2.2 2.2 0 0 0 2.2 2.2h9.6a2.2 2.2 0 0 0 2.2-2.2V6.7a2.2 2.2 0 0 0-2.2-2.2H15"/><path d="M9 3.6h6v2.6H9Z"/><path d="m8.6 12.2 2 2 4.4-4.4"/><path d="M9 17.4h6"/>'),
   simulator: ic('<path d="M7 4.5v3M7 15.5v3.5M17 6.5v2.5M17 16v3"/><rect x="5" y="7.5" width="4" height="8" rx="1.1"/><rect x="15" y="9" width="4" height="7" rx="1.1"/>'),
   ticks: ic('<path d="M3 13h3.5l2.3-6.5 3.6 11 2.4-7H21"/>'),
@@ -69,7 +69,7 @@ const TABS = [
   { id: "diary", label: "Дневник", icon: ICONS.diary, init: initDiary },
   { id: "vault", label: "Кубышка", icon: ICONS.vault, init: initVault },
   { id: "analytics", label: "Аналитика монет", icon: ICONS.analytics, init: initAnalytics },
-  { id: "waves", label: "Волны — памятка", icon: ICONS.waves, init: initWaves },
+  { id: "academy", label: "Академия", icon: ICONS.academy, init: initAcademy },
   { id: "checklist", label: "Чек-лист", icon: ICONS.checklist, init: initChecklist },
   { id: "simulator", label: "Симулятор", icon: ICONS.simulator, init: initSimulator },
   { id: "ticks", label: "Тиковый график", icon: ICONS.ticks, init: initTicks },
