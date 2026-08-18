@@ -125,6 +125,7 @@ export function initAcademy(container) {
     <nav class="ac-tabs" id="ac-tabs">
       <button class="chip" data-at="waves">Волны Эллиотта</button>
       <button class="chip" data-at="mentors">Наставники</button>
+      <button class="chip" data-at="schemes">Схемы</button>
     </nav>
     <div id="ac-pane"></div>`;
   root.querySelectorAll("#ac-tabs .chip").forEach((b) => b.onclick = () => show(b.dataset.at));
@@ -138,9 +139,88 @@ function show(tab) {
   if (tab === "waves") {
     initWaves(pane);
     pane.querySelector(".pagehead")?.remove(); // у памятки свой заголовок — в академии он лишний
+  } else if (tab === "schemes") {
+    renderSchemes(pane);
   } else {
     renderMentors(pane);
   }
+}
+
+// ---------- Схемы ----------
+
+function renderSchemes(pane) {
+  pane.innerHTML = `
+  <section class="block">
+    <h2>Схема Вайса: где искать сделки</h2>
+    <p class="muted small" style="margin:4px 0 14px">Рисунок 1.1 из «Trades About to Happen» Дэвида Вайса.
+    Торговый диапазон между двумя уровнями; сделки ищутся в отмеченных точках. Под русскими подписями — оригинальные термины для поиска видео.</p>
+    <div style="overflow-x:auto">
+    <svg viewBox="0 0 1050 820" role="img" style="display:block;max-width:960px;min-width:640px;height:auto;color:#ece7df;background:var(--bg-inset);border:1px solid var(--chart-grid);border-radius:10px"
+         aria-label="Схема Дэвида Вайса: диапазон с сокращением импульса, апотрастом, спрингом, поглощением и пробоями">
+      <line x1="40" y1="270" x2="905" y2="270" stroke="currentColor" stroke-width="3.5" stroke-dasharray="24 13"/>
+      <line x1="28" y1="555" x2="920" y2="555" stroke="currentColor" stroke-width="3.5" stroke-dasharray="24 13"/>
+      <line x1="352" y1="300" x2="586" y2="572" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <line x1="410" y1="296" x2="640" y2="566" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <line x1="562" y1="542" x2="806" y2="290" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <line x1="612" y1="588" x2="850" y2="334" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <line x1="352" y1="368" x2="424" y2="368" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="402" y1="412" x2="478" y2="412" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="455" y1="460" x2="540" y2="460" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="600" y1="500" x2="690" y2="500" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="630" y1="445" x2="726" y2="445" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="662" y1="385" x2="770" y2="385" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <line x1="695" y1="330" x2="845" y2="330" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5"/>
+      <polyline fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" points="30,450 42,515 52,468 65,538 78,470 95,420 105,455 120,380 130,415 145,340 155,300 165,345 178,308 190,352 202,318 215,370 230,430 240,395 252,470 262,420 275,350 285,378 298,310 308,340 320,285 330,315 342,258 352,300 362,262 372,330 385,368 398,340 412,392 425,362 440,420 452,388 468,448 480,415 495,470 508,440 520,500 532,468 545,530 558,555 568,592 578,540 588,565 600,535 612,558 625,528 638,480 650,505 662,455 674,482 688,428 700,455 712,400 724,428 738,372 748,330 758,355 768,313 778,342 788,298 798,325 808,282 818,312 828,215 838,260 848,225 858,285 868,272 875,268 890,180 897,210 910,120 918,150 928,80"/>
+      <line x1="550" y1="536" x2="568" y2="592" stroke="currentColor" stroke-width="5"/>
+      <line x1="818" y1="312" x2="829" y2="213" stroke="currentColor" stroke-width="5.5"/>
+      <line x1="588" y1="592" x2="625" y2="712" stroke="currentColor" stroke-width="5.5" stroke-dasharray="17 11"/>
+      <polyline fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="8 6" stroke-linejoin="round" points="625,712 645,640 660,735 683,620 697,668 712,600 730,700 750,610 765,660 785,585 800,630 820,570 835,610 850,562 862,600 875,558 895,650 905,700 915,748"/>
+      <ellipse cx="180" cy="328" rx="46" ry="44" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="330" cy="292" rx="50" ry="50" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="572" cy="556" rx="62" ry="50" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="786" cy="314" rx="56" ry="46" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="872" cy="276" rx="31" ry="29" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <ellipse cx="862" cy="580" rx="41" ry="37" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <line x1="148" y1="252" x2="172" y2="296" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="330" y1="228" x2="330" y2="243" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="758" y1="206" x2="820" y2="248" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="893" y1="322" x2="877" y2="298" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="845" y1="376" x2="806" y2="342" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="548" y1="628" x2="558" y2="596" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="652" y1="592" x2="620" y2="562" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="548" y1="692" x2="596" y2="662" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="862" y1="516" x2="862" y2="542" stroke="currentColor" stroke-width="1.2"/>
+      <g fill="currentColor">
+        <g text-anchor="middle">
+          <text x="118" y="230" font-size="16" font-weight="bold">Сокращение импульса</text>
+          <text x="118" y="247" font-size="11.5" font-style="italic" opacity=".55">Shortening of Thrust</text>
+          <text x="330" y="205" font-size="16" font-weight="bold">Апотраст</text>
+          <text x="330" y="222" font-size="11.5" font-style="italic" opacity=".55">Upthrust</text>
+          <text x="722" y="188" font-size="16" font-weight="bold">Пробой вверх</text>
+          <text x="722" y="205" font-size="11.5" font-style="italic" opacity=".55">Breakout</text>
+          <text x="540" y="648" font-size="16" font-weight="bold">Спринг</text>
+          <text x="540" y="665" font-size="11.5" font-style="italic" opacity=".55">Spring</text>
+          <text x="512" y="712" font-size="16" font-weight="bold">Пробой вниз</text>
+          <text x="512" y="729" font-size="11.5" font-style="italic" opacity=".55">Breakdown</text>
+          <text x="862" y="486" font-size="16" font-weight="bold">Тест пробоя вниз</text>
+          <text x="862" y="503" font-size="11.5" font-style="italic" opacity=".55">Test of Breakdown</text>
+        </g>
+        <g text-anchor="start">
+          <text x="898" y="340" font-size="16" font-weight="bold">Тест пробоя</text>
+          <text x="898" y="357" font-size="11.5" font-style="italic" opacity=".55">Test of Breakout</text>
+          <text x="850" y="392" font-size="16" font-weight="bold">Поглощение</text>
+          <text x="850" y="409" font-size="11.5" font-style="italic" opacity=".55">Absorption</text>
+          <text x="658" y="606" font-size="16" font-weight="bold">Тест спринга</text>
+          <text x="658" y="623" font-size="11.5" font-style="italic" opacity=".55">Test of Spring</text>
+        </g>
+      </g>
+    </svg>
+    </div>
+    <p class="muted small" style="margin-top:12px;line-height:1.6;max-width:860px">Логика схемы: в диапазоне сверху — сокращение импульса
+    и апотраст (ложный пробой вверх), снизу — спринг (ложный пробой вниз) с тестом. Дальше два сценария:
+    поглощение предложения под сопротивлением → пробой вверх → тест пробоя, либо (пунктир) пробой вниз →
+    возврат к поддержке снизу → тест пробоя вниз. Сделки ищутся именно в этих точках.</p>
+  </section>`;
 }
 
 // ---------- Наставники ----------
