@@ -427,6 +427,22 @@ details.block[open] > summary { margin-bottom: 4px; }
 /* Десктоп: мобильные элементы скрыты */
 .only-mob, .stats-more, .bd-chips, .wnav { display: none; }
 
+/* Проп-сделки: календарь месяца */
+.prop-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 14px; }
+.prop-cal .pc-h { text-align: center; color: var(--text-muted); font-size: 12px; padding: 2px 0 4px; }
+.pc-cell { min-height: 62px; border: 1px solid var(--border-soft); border-radius: 8px;
+  padding: 6px 8px; cursor: pointer; background: var(--bg-2); position: relative; font-size: 13px; }
+.pc-cell:hover { border-color: var(--accent); }
+.pc-cell.today .pc-d { color: var(--accent-text); font-weight: 800; }
+.pc-cell.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pc-cnt { position: absolute; right: 6px; bottom: 6px; background: var(--accent); color: #fff;
+  border-radius: 10px; font-size: 11px; padding: 1px 7px; font-weight: 600; }
+.prop-shot { height: 90px; border-radius: 6px; border: 1px solid var(--border-soft); cursor: pointer; }
+@media (max-width: 700px) {
+  .pc-cell { min-height: 46px; padding: 4px 6px; }
+  .prop-shot { height: 68px; }
+}
+
 /* Академия: закладки разделов — видны на любом экране (в отличие от мобильного .wnav) */
 .ac-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; }
 .ac-tabs .chip { font-size: 13.5px; padding: 9px 18px; }

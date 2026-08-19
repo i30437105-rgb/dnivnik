@@ -314,6 +314,61 @@ export async function deleteAttachment(att) {
   await sb.from("attachments").delete().eq("id", att.id);
 }
 
+// ---------- Проп-сделки: ручной журнал ----------
+
+export async function loadPropTrades(fromDay, toDay) {
+  const { data, error } = await sb.from("prop_trades").select("*")
+    .gte("day", fromDay).lte("day", toDay)
+    .order("day").order("at_time", { nullsFirst: true }).order("created_at");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function createPropTrade(row) {
+  const { data, error } = await sb.from("prop_trades").insert(row).select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updatePropTrade(id, patch) {
+  const { error } = await sb.from("prop_trades").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deletePropTrade(id) {
+  // сначала файлы из хранилища — строки prop_attachments удалит каскад
+  const { data: shots } = await sb.from("prop_attachments").select("path").eq("trade_id", id);
+  if (shots?.length) await sb.storage.from("screens").remove(shots.map((s) => s.path));
+  const { error } = await sb.from("prop_trades").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function uploadPropShot(tradeId, file) {
+  if (!OK_MIME.has(file.type)) throw new Error("Только PNG, JPG или WebP");
+  if (file.size > MAX_FILE) throw new Error("Файл больше 10 МБ");
+  const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[file.type];
+  const path = `prop/${tradeId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb.storage.from("screens").upload(path, file, { contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { error: e2 } = await sb.from("prop_attachments").insert({ trade_id: tradeId, path });
+  if (e2) throw new Error(e2.message);
+}
+
+export async function loadPropShots(tradeId) {
+  const { data } = await sb.from("prop_attachments").select("*").eq("trade_id", tradeId).order("created_at");
+  const out = [];
+  for (const a of data ?? []) {
+    const { data: signed } = await sb.storage.from("screens").createSignedUrl(a.path, 3600);
+    out.push({ ...a, url: signed?.signedUrl });
+  }
+  return out;
+}
+
+export async function deletePropShot(att) {
+  await sb.storage.from("screens").remove([att.path]);
+  await sb.from("prop_attachments").delete().eq("id", att.id);
+}
+
 // ---------- Аналитика ----------
 
 export const runAnalyze = () => callFn("market-analyze", { action: "analyze" });

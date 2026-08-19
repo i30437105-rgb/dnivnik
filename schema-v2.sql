@@ -297,6 +297,40 @@ select
   (select coalesce(a.upl, 0) from account_snapshots a where a.day = d.day order by a.ts desc limit 1) as end_upl
 from days d;
 
+-- ---------- Проп-сделки: ручной журнал (без цен и PnL) ----------
+create table if not exists prop_trades (
+  id uuid primary key default gen_random_uuid(),
+  day date not null,
+  at_time time,
+  symbol text default '',
+  side text default 'Buy' check (side in ('Buy', 'Sell')),
+  strategy_id bigint,
+  state_tags text[] default '{}',
+  comment text default '',
+  created_at timestamptz default now()
+);
+create index if not exists prop_trades_day_idx on prop_trades (day);
+
+create table if not exists prop_attachments (
+  id uuid primary key default gen_random_uuid(),
+  trade_id uuid not null references prop_trades(id) on delete cascade,
+  path text not null,
+  created_at timestamptz default now()
+);
+create index if not exists prop_attach_idx on prop_attachments (trade_id);
+
+alter table prop_trades enable row level security;
+alter table prop_attachments enable row level security;
+do $$
+declare t text;
+begin
+  foreach t in array array['prop_trades', 'prop_attachments']
+  loop
+    execute format('drop policy if exists "auth all %1$s" on %1$I', t);
+    execute format('create policy "auth all %1$s" on %1$I for all to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;
+
 -- ---------- RLS: доступ только вошедшему пользователю ----------
 alter table user_settings enable row level security;
 alter table account_snapshots enable row level security;

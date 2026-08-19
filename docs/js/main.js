@@ -2,6 +2,7 @@
 import { getSession, signIn, signOut } from "./supa.js";
 import { loadSettings } from "./api.js";
 import { initDiary } from "./diary.js";
+import { initProp } from "./prop.js";
 import { initVault } from "./vault.js";
 import { initAnalytics } from "./analytics.js";
 import { initAcademy } from "./academy.js";
@@ -55,6 +56,7 @@ const ic = (paths) =>
 const ICONS = {
   diary: ic('<path d="M6.5 3.5h11a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5h-11"/><path d="M6.5 3.5A2.5 2.5 0 0 0 4 6v12a2.5 2.5 0 0 0 2.5 2.5"/><path d="M9 8h7M9 12h7M9 16h4"/>'),
   vault: ic('<path d="M4 9.5C4 8 5.2 6.8 6.7 6.8h10.6C18.8 6.8 20 8 20 9.5v7.7c0 1.5-1.2 2.7-2.7 2.7H6.7C5.2 19.9 4 18.7 4 17.2Z"/><path d="M8 6.8 9.6 4h4.8L16 6.8"/><path d="M15.8 13.4h1.6"/>'),
+  prop: ic('<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="m8.6 14.6 2.1 2.1 4.4-4.4"/>'),
   analytics: ic('<path d="M4 20V10M9.3 20V4M14.7 20v-7M20 20V7"/>'),
   academy: ic('<path d="M12 4.2 2.8 8.9 12 13.6l9.2-4.7Z"/><path d="M6 11v4.6c0 1.3 2.7 2.6 6 2.6s6-1.3 6-2.6V11"/><path d="M21.2 9v4.5"/>'),
   checklist: ic('<path d="M9 4.5H7.2A2.2 2.2 0 0 0 5 6.7v11.6a2.2 2.2 0 0 0 2.2 2.2h9.6a2.2 2.2 0 0 0 2.2-2.2V6.7a2.2 2.2 0 0 0-2.2-2.2H15"/><path d="M9 3.6h6v2.6H9Z"/><path d="m8.6 12.2 2 2 4.4-4.4"/><path d="M9 17.4h6"/>'),
@@ -67,6 +69,7 @@ const ICONS = {
 
 const TABS = [
   { id: "diary", label: "Дневник", icon: ICONS.diary, init: initDiary },
+  { id: "prop", label: "Проп-сделки", icon: ICONS.prop, init: initProp },
   { id: "vault", label: "Кубышка", icon: ICONS.vault, init: initVault },
   { id: "analytics", label: "Аналитика монет", icon: ICONS.analytics, init: initAnalytics },
   { id: "academy", label: "Академия", icon: ICONS.academy, init: initAcademy },
