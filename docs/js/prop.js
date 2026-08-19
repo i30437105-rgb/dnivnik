@@ -14,6 +14,14 @@ const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "�
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const DOW = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
+// оценка исполнения: по плану / повезло (в плюс не по плану) / ошибка
+const GRADES = [
+  { id: "plan", label: "По плану", col: "#4cc47a" },
+  { id: "luck", label: "Повезло", col: "#e0a83a" },
+  { id: "error", label: "Ошибка", col: "#f0553f" },
+];
+const gradeOf = (id) => GRADES.find((g) => g.id === id);
+
 let root;
 let cur;              // { y, m } — показанный месяц
 let selDay;           // выбранный день YYYY-MM-DD
@@ -21,6 +29,7 @@ let byDay = new Map();// сделки месяца по дням
 let strats = [];
 let editingId = null; // id редактируемой сделки (null — новая)
 let pendingFiles = [];// скрины, выбранные до сохранения новой сделки
+let gradeFilter = ""; // фильтр по оценке: "" — все
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const key = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
@@ -38,11 +47,16 @@ export function initProp(container) {
       <div class="titles"><h1>Проп-сделки</h1><span class="sub">ручной журнал: точки входа, скрины, итог — словами</span></div>
     </header>
     <div class="block">
-      <div class="row" style="gap:10px;align-items:center">
+      <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn" id="pp-prev">‹</button>
         <b id="pp-title" style="min-width:150px;text-align:center"></b>
         <button class="btn" id="pp-next">›</button>
         <button class="btn ghost" id="pp-today">Сегодня</button>
+        <span class="spacer" style="flex:1"></span>
+        <span class="row" id="pp-filter" style="gap:6px;flex-wrap:wrap" title="Фильтр по оценке — ищи паттерны ошибок">
+          <button class="chip ${gradeFilter === "" ? "on" : ""}" data-g="">Все</button>
+          ${GRADES.map((g) => `<button class="chip ${gradeFilter === g.id ? "on" : ""}" data-g="${g.id}" style="${gradeFilter === g.id ? "" : `color:${g.col}`}">${g.label}</button>`).join("")}
+        </span>
       </div>
       <div class="prop-cal" id="pp-cal"></div>
     </div>
@@ -55,6 +69,15 @@ export function initProp(container) {
     selDay = todayKey();
     refresh();
   };
+  root.querySelectorAll("#pp-filter .chip").forEach((b) => b.onclick = () => {
+    gradeFilter = b.dataset.g;
+    root.querySelectorAll("#pp-filter .chip").forEach((x) => {
+      x.classList.toggle("on", x === b);
+      const g = gradeOf(x.dataset.g);
+      x.style.color = x === b || !g ? "" : g.col;
+    });
+    refresh();
+  });
   loadStrategies().then((s) => { strats = s; }).catch(() => { strats = []; });
   refresh();
 }
@@ -79,6 +102,7 @@ async function refresh() {
   }
   byDay = new Map();
   for (const t of trades) {
+    if (gradeFilter && t.grade !== gradeFilter) continue;
     if (!byDay.has(t.day)) byDay.set(t.day, []);
     byDay.get(t.day).push(t);
   }
@@ -95,9 +119,12 @@ function renderCal() {
   for (let i = 0; i < shift; i++) html += `<div></div>`;
   for (let d = 1; d <= lastD; d++) {
     const k = key(cur.y, cur.m, d);
-    const n = byDay.get(k)?.length ?? 0;
+    const dayTrades = byDay.get(k) ?? [];
+    const n = dayTrades.length;
+    // день с ошибками сразу виден: метка красная — паттерны сбоев читаются по календарю
+    const hasErr = dayTrades.some((t) => t.grade === "error");
     html += `<div class="pc-cell ${k === selDay ? "on" : ""} ${k === tk ? "today" : ""}" data-day="${k}">
-      <span class="pc-d">${d}</span>${n ? `<span class="pc-cnt">${n}</span>` : ""}</div>`;
+      <span class="pc-d">${d}</span>${n ? `<span class="pc-cnt" ${hasErr ? 'style="background:#f0553f"' : ""}>${n}</span>` : ""}</div>`;
   }
   el.innerHTML = html;
   el.querySelectorAll(".pc-cell").forEach((c) => c.onclick = () => {
@@ -139,6 +166,13 @@ const sideChip = (side) => side === "Buy"
   ? `<span class="chip" style="background:rgba(76,196,122,.15);border-color:rgba(76,196,122,.4);color:#4cc47a">Лонг</span>`
   : `<span class="chip" style="background:rgba(240,85,63,.15);border-color:rgba(240,85,63,.4);color:#f0553f">Шорт</span>`;
 
+const gradeChip = (id) => {
+  const g = gradeOf(id);
+  if (!g) return "";
+  const rgb = { plan: "76,196,122", luck: "224,168,58", error: "240,85,63" }[id];
+  return `<span class="chip" style="background:rgba(${rgb},.15);border-color:rgba(${rgb},.4);color:${g.col}">${g.label}</span>`;
+};
+
 function cardHtml(t) {
   const strat = strats.find((s) => s.id === t.strategy_id)?.name;
   return `
@@ -147,6 +181,7 @@ function cardHtml(t) {
       ${t.at_time ? `<span class="num muted">${esc(t.at_time.slice(0, 5))}</span>` : ""}
       <b>${esc(t.symbol || "—")}</b>
       ${sideChip(t.side)}
+      ${gradeChip(t.grade)}
       ${strat ? `<span class="muted small">${esc(strat)}</span>` : ""}
       <span class="spacer" style="flex:1"></span>
       <button class="btn ghost small" data-edit title="Изменить">✎</button>
@@ -206,6 +241,10 @@ function showForm(t) {
           <option value="">Без стратегии</option>
           ${strats.map((s) => `<option value="${s.id}" ${t?.strategy_id === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
         </select></label>
+      <div class="muted small" style="display:flex;flex-direction:column;gap:4px">Оценка (клик по активной — снять)
+        <span class="seg">
+          ${GRADES.map((g) => `<button type="button" class="btn ${t?.grade === g.id ? "on" : ""}" data-grade="${g.id}" style="color:${g.col}">${g.label}</button>`).join("")}
+        </span></div>
     </div>
     <label class="muted small" style="display:flex;flex-direction:column;gap:4px">Состояние (через запятую)
       <input name="tags" placeholder="спокойствие, FOMO, усталость" value="${esc((t?.state_tags ?? []).join(", "))}"></label>
@@ -233,6 +272,11 @@ function showForm(t) {
   const f = holder.querySelector("#ppf");
   f.querySelectorAll("[data-side]").forEach((b) => b.onclick = () => {
     f.querySelectorAll("[data-side]").forEach((x) => x.classList.toggle("on", x === b));
+  });
+  f.querySelectorAll("[data-grade]").forEach((b) => b.onclick = () => {
+    const was = b.classList.contains("on");
+    f.querySelectorAll("[data-grade]").forEach((x) => x.classList.remove("on"));
+    if (!was) b.classList.add("on"); // повторный клик снимает оценку
   });
   holder.querySelector("#ppf-cancel").onclick = () => { holder.innerHTML = ""; editingId = null; pendingFiles = []; };
 
@@ -274,6 +318,7 @@ function showForm(t) {
       strategy_id: f.querySelector('[name="strategy"]').value ? Number(f.querySelector('[name="strategy"]').value) : null,
       state_tags: f.querySelector('[name="tags"]').value.split(",").map((s) => s.trim()).filter(Boolean),
       comment: f.querySelector('[name="comment"]').value.trim(),
+      grade: f.querySelector("[data-grade].on")?.dataset.grade ?? "",
     };
     try {
       let id = editingId;

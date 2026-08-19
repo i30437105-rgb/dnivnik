@@ -310,6 +310,8 @@ create table if not exists prop_trades (
   created_at timestamptz default now()
 );
 create index if not exists prop_trades_day_idx on prop_trades (day);
+-- оценка качества исполнения: '' | plan (по плану) | luck (повезло) | error (ошибка)
+alter table prop_trades add column if not exists grade text default '';
 
 create table if not exists prop_attachments (
   id uuid primary key default gen_random_uuid(),
