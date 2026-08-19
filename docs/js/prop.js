@@ -7,6 +7,7 @@ import {
   uploadPropShot, loadPropShots, deletePropShot, loadStrategies,
 } from "./api.js";
 import { loadSymbols } from "./sim/data.js";
+import { openGallery } from "./gallery.js";
 import { esc } from "./util.js";
 
 const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -172,7 +173,12 @@ function bindCard(listEl, t) {
     const row = el.querySelector(".prop-shots");
     if (!row || !shots.length) return;
     row.innerHTML = shots.map((s) => `<img class="prop-shot" src="${esc(s.url ?? "")}" alt="скрин">`).join("");
-    [...row.querySelectorAll("img")].forEach((img, i) => img.onclick = () => window.open(shots[i].url, "_blank"));
+    const items = shots.map((s) => ({
+      url: s.url,
+      caption: `${t.symbol || "Сделка"} · ${t.side === "Buy" ? "Лонг" : "Шорт"}`,
+      sub: `${fmtDayTitle(t.day)}${t.at_time ? " · " + t.at_time.slice(0, 5) : ""}`,
+    }));
+    [...row.querySelectorAll("img")].forEach((img, i) => img.onclick = () => openGallery(items, i));
   }).catch(() => { /* скрины не критичны для списка */ });
 }
 
