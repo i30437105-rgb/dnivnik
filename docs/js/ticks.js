@@ -117,7 +117,8 @@ export function initTicks(root) {
   const chartEl = root.querySelector("#tk-chart");
   const chart = k.init(chartEl, { locale: "ru-RU" });
   styleChart(chart);
-  chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "tk_vol", height: 84 });
+  chart.createIndicator({ name: "VOL", calcParams: [] }, false,
+    { id: "tk_vol", height: Math.max(100, Math.round((chartEl.clientHeight || 640) * 0.17)) });
 
   T = {
     root, chart, chartEl, symbol, size,
@@ -151,7 +152,7 @@ function styleChart(chart) {
       tooltip: { text: { color: css("--text-2") || "#c9c1b7" } },
     },
     indicator: {
-      bars: [{ upColor: "rgba(76,196,122,.55)", downColor: "rgba(240,85,63,.5)", noChangeColor: axis }],
+      bars: [{ upColor: "rgba(76,196,122,.85)", downColor: "rgba(240,85,63,.8)", noChangeColor: axis }],
       tooltip: { text: { color: axis }, showName: false, showParams: false },
     },
     xAxis: { axisLine: { color: border }, tickLine: { color: border }, tickText: { color: axis } },

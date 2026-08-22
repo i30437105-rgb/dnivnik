@@ -391,7 +391,7 @@ function registerExtensions(k) {
       key: "wave", title: "Волна: ", type: "bar", baseValue: 0,
       // klinecharts 9.8.10 отдаёт значения в current.indicatorData (проверено дебагом)
       styles: ({ current }) => ({
-        color: (current?.indicatorData?.dir ?? 1) > 0 ? "rgba(76,196,122,.55)" : "rgba(240,85,63,.5)",
+        color: (current?.indicatorData?.dir ?? 1) > 0 ? "rgba(76,196,122,.85)" : "rgba(240,85,63,.8)",
       }),
     }],
     calc: (list, { calcParams }) => {
@@ -563,7 +563,8 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       tooltip: { text: { color: css("--text-2") || "#c9c1b7" } },
     },
     indicator: {
-      bars: [{ upColor: "rgba(76,196,122,.55)", downColor: "rgba(240,85,63,.5)", noChangeColor: axis }],
+      // плотные цвета — при 2-5px столбиках полупрозрачные сливались с фоном
+      bars: [{ upColor: "rgba(76,196,122,.85)", downColor: "rgba(240,85,63,.8)", noChangeColor: axis }],
       lines: [{ color: css("--accent-text") }, { color: css("--warn") }, { color: up }],
       // имена/параметры индикаторов в легенде не показываем (у XVOL там сырой JSON),
       // значения (VOLUME, Волна) остаются
@@ -598,9 +599,11 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       ] } },
     });
   }
-  // Объём без MA-линий — чистая гистограмма; под ним WWV ATR 14 (как на Bybit у Ивана)
-  chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: 72 });
-  chart.createIndicator({ name: "WWV", calcParams: [14, 1] }, false, { id: "sim_wwv", height: 72 });
+  // Объём без MA-линий — чистая гистограмма; под ним WWV ATR 14 (как на Bybit у Ивана).
+  // Высота панелей — от высоты графика (72px было мало: обычные столбики выходили по 2-5px)
+  const paneH = el.clientHeight || 640;
+  chart.createIndicator({ name: "VOL", calcParams: [] }, false, { id: "sim_vol", height: Math.max(100, Math.round(paneH * 0.17)) });
+  chart.createIndicator({ name: "WWV", calcParams: [14, 1] }, false, { id: "sim_wwv", height: Math.max(84, Math.round(paneH * 0.13)) });
 
   const drawn = new Set();  // пользовательская разметка
   let lastDrawn = null;     // оверлей, который сейчас рисуется (для finishDrawing)
