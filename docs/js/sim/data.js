@@ -10,7 +10,11 @@ export const TIMEFRAMES = [
   { id: "60", label: "1ч", ms: 60 * 60e3 },
   { id: "240", label: "4ч", ms: 240 * 60e3 },
   { id: "D", label: "1д", ms: 24 * 60 * 60e3 },
+  { id: "W", label: "1н", ms: 7 * 24 * 60 * 60e3 },
 ];
+
+const WEEK_MS = 7 * 24 * 60 * 60e3;
+const MONDAY_OFFSET = 4 * 24 * 60 * 60e3; // эпоха началась в четверг; недели Bybit — с понедельника UTC
 export const tfById = (id) => TIMEFRAMES.find((t) => t.id === id) ?? TIMEFRAMES[0];
 
 // Агрегация баров младшего ТФ в старший (bucket по UTC — как дневки Bybit).
@@ -19,7 +23,9 @@ export function aggregateBars(bars, tfMs) {
   const out = [];
   let cur = null;
   for (const b of bars) {
-    const start = Math.floor(b.timestamp / tfMs) * tfMs;
+    const start = tfMs === WEEK_MS
+      ? Math.floor((b.timestamp - MONDAY_OFFSET) / tfMs) * tfMs + MONDAY_OFFSET
+      : Math.floor(b.timestamp / tfMs) * tfMs;
     if (!cur || cur.timestamp !== start) {
       if (cur) out.push(cur);
       cur = { timestamp: start, open: b.open, high: b.high, low: b.low, close: b.close,

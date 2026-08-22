@@ -261,6 +261,11 @@ function setupForm() {
       <label class="fld"><span>Пара</span>
         <input id="ss-symbol" list="sim-symbols" value="${esc(s.symbol ?? "BTCUSDT")}" autocomplete="off" spellcheck="false">
         <datalist id="sim-symbols"></datalist></label>
+      <div class="chips" id="ss-quick">
+        <button class="chip" data-sym="BTCUSDT">Биток</button>
+        <button class="chip" data-sym="XAUUSDT">Золото</button>
+        <button class="chip" data-sym="XAGUSDT">Серебро</button>
+      </div>
       <div class="fld"><span>Таймфрейм</span>
         <div class="seg" id="ss-tf">${TIMEFRAMES.map((t) =>
           `<button class="btn ${t.id === tf ? "on" : ""}" data-tf="${t.id}">${t.label}</button>`).join("")}</div></div>
@@ -284,6 +289,10 @@ function bindSetup(el) {
   loadSymbols().then((syms) => {
     el.querySelector("#sim-symbols").innerHTML = syms.map((s) => `<option value="${esc(s)}">`).join("");
   }).catch(() => { /* поиск пар не критичен — можно ввести руками */ });
+
+  el.querySelectorAll("#ss-quick .chip").forEach((b) => b.onclick = () => {
+    el.querySelector("#ss-symbol").value = b.dataset.sym;
+  });
 
   for (const seg of ["#ss-tf", "#ss-mode"]) {
     el.querySelectorAll(`${seg} .btn`).forEach((b) => b.onclick = () => {
