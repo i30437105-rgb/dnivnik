@@ -610,6 +610,7 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   const posIds = [];        // линии открытой позиции
   const tpsl = { tp: null, sl: null }; // перетаскиваемые уровни
   const ghost = { tp: null, sl: null }; // заготовки TP/SL — потянул и уровень установлен
+  const tpslTag = { tp: null, sl: null }; // плашки «сколько будет прибыли/убытка» у линий TP/SL
   let pnlId = null;         // плашка uPnL у линии входа
 
   // Канон разметки — свой реестр: точки хранятся как (timestamp, value).
@@ -682,6 +683,11 @@ export function createSimChart(el, hooks = {}, opts = {}) {
     styles: {
       line: { color: faded ? withAlpha(kind === "tp" ? up : down, 0.4) : kind === "tp" ? up : down, style: "dashed" },
       text: { backgroundColor: faded ? withAlpha(kind === "tp" ? up : down, 0.4) : kind === "tp" ? up : down, color: "#fff" },
+    },
+    // во время перетаскивания плашка прибыли/убытка обновляется вживую
+    onPressedMoving: (e) => {
+      const v = e.overlay.points?.[0]?.value;
+      if (v != null) hooks.onTpSlDragging?.(kind, v);
     },
     onPressedMoveEnd: (e) => {
       const v = e.overlay.points?.[0]?.value;
@@ -905,6 +911,16 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       this.setTpSl({ tp: null, sl: null });
       this.setTpSlGhost({ tp: null, sl: null });
       this.setPnlTag(null);
+      this.setTpSlTags({ tp: null, sl: null });
+    },
+
+    // Метка точки выхода — на автоскрин закрытия (уберётся вместе с линиями позиции)
+    markExit({ timestamp, value, positive }) {
+      posIds.push(chart.createOverlay({
+        name: "simpleAnnotation", lock: true, extendData: "Выход",
+        points: [{ timestamp, value }],
+        styles: { text: { color: "#fff", backgroundColor: positive ? "rgba(31,122,68,.95)" : "rgba(178,45,30,.95)" } },
+      }));
     },
 
     // Объёмы волн цифрами у вершин (WWVN): on = вкл/выкл, sens = чувствительность ×ATR
@@ -964,6 +980,26 @@ export function createSimChart(el, hooks = {}, opts = {}) {
         pnlId = chart.createOverlay({
           name: "pnlTag", lock: true, points: [{ value: tag.value }], extendData: data,
         });
+      }
+    },
+
+    // Плашки прогноза у линий TP/SL: tag = {value, text, positive} или null
+    setTpSlTags(tags) {
+      for (const kind of ["tp", "sl"]) {
+        if (!(kind in tags)) continue;
+        const tag = tags[kind];
+        if (!tag) {
+          if (tpslTag[kind]) { chart.removeOverlay({ id: tpslTag[kind] }); tpslTag[kind] = null; }
+          continue;
+        }
+        const data = { text: tag.text, bg: tag.positive ? "rgba(31,122,68,.92)" : "rgba(178,45,30,.92)" };
+        if (tpslTag[kind] && chart.getOverlayById?.(tpslTag[kind])) {
+          chart.overrideOverlay({ id: tpslTag[kind], points: [{ value: tag.value }], extendData: data });
+        } else {
+          tpslTag[kind] = chart.createOverlay({
+            name: "pnlTag", lock: true, points: [{ value: tag.value }], extendData: data,
+          });
+        }
       }
     },
 

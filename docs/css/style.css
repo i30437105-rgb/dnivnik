@@ -443,6 +443,25 @@ details.block[open] > summary { margin-bottom: 4px; }
   .prop-shot { height: 68px; }
 }
 
+/* Симулятор: обязательное обоснование входа */
+.sim-work { position: relative; } /* якорь для модала обоснования */
+.sim-notebox { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center;
+  justify-content: center; background: rgba(10, 8, 6, .55); }
+.sim-notecard { width: min(480px, 92%); }
+.sim-notecard textarea { width: 100%; min-height: 96px; resize: vertical; }
+
+/* Статистика: подсветка прибыльных/убыточных сделок */
+.tbl tr.tr-win td { background: rgba(76, 196, 122, .07); }
+.tbl tr.tr-loss td { background: rgba(240, 85, 63, .07); }
+.tbl tr.tr-win:hover td { background: rgba(76, 196, 122, .13); }
+.tbl tr.tr-loss:hover td { background: rgba(240, 85, 63, .13); }
+
+/* Карточка сделки: обоснование входа */
+.sim-tnote { margin: 10px 0 4px; padding: 9px 12px; background: var(--bg-inset);
+  border-left: 3px solid var(--accent); border-radius: 6px; white-space: pre-wrap;
+  font-size: var(--fs-13); line-height: 1.5; }
+.sim-tnote .lbl { display: block; color: var(--text-muted); margin-bottom: 4px; }
+
 /* Академия: закладки разделов — видны на любом экране (в отличие от мобильного .wnav) */
 .ac-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; }
 .ac-tabs .chip { font-size: 13.5px; padding: 9px 18px; }

@@ -61,7 +61,8 @@ function renderSummary(el, account, closed) {
   el.innerHTML =
     cell("PnL эпохи", money(pnl), pnl > 0 ? "pos" : pnl < 0 ? "neg" : "") +
     cell("Сделок", String(closed.length)) +
-    cell("Winrate", closed.length ? fmtRu(wins.length / closed.length * 100, 0) + "%" : "—") +
+    cell("Прибыльных", closed.length ? `${fmtRu(wins.length / closed.length * 100, 0)}% · ${wins.length}` : "—", "pos") +
+    cell("Убыточных", closed.length ? `${fmtRu(losses.length / closed.length * 100, 0)}% · ${losses.length}` : "—", "neg") +
     cell("Profit factor", pf == null ? "—" : fmtRu(pf, 2)) +
     cell("Средняя прибыль", wins.length ? money(sumW / wins.length) : "—", "pos") +
     cell("Средний убыток", losses.length ? money(sumL / losses.length) : "—", "neg") +
@@ -142,7 +143,8 @@ function renderTradesTable(el, rows) {
     rows.map((t) => {
       const roi = Number(t.margin) ? (Number(t.pnl) / Number(t.margin)) * 100 : 0;
       const cls = t.pnl > 0 ? "pos" : t.pnl < 0 ? "neg" : "";
-      return `<tr class="trow clickable" data-id="${t.id}">
+      const rowCls = t.pnl > 0 ? "tr-win" : t.pnl < 0 ? "tr-loss" : "";
+      return `<tr class="trow clickable ${rowCls}" data-id="${t.id}">
         <td class="num">${fmtDT(t.entry_ts)}</td>
         <td>${esc(t.sim_sessions?.symbol ?? "")} · ${esc(tfById(t.sim_sessions?.timeframe).label)}</td>
         <td class="${t.side === "long" ? "pos" : "neg"}">${SIDE_RU[t.side] ?? t.side}</td>
@@ -171,6 +173,7 @@ export async function openTradeCard(t) {
       <div><span class="lbl">Причина закрытия</span><span>${REASON_RU[t.exit_reason] ?? "—"}</span></div>
       <div><span class="lbl">ROI</span><span class="num">${Number(t.margin) ? fmtRu(Number(t.pnl) / Number(t.margin) * 100, 1) + "%" : "—"}</span></div>
     </div>
+    ${t.entry_note ? `<div class="sim-tnote"><span class="lbl">Обоснование входа</span>${esc(t.entry_note)}</div>` : ""}
     <div id="sim-shots" class="loading">Загружаю скрины…</div>`, { wide: true });
 
   const box = m.el.querySelector("#sim-shots");

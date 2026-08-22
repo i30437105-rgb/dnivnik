@@ -203,6 +203,9 @@ export function mountWork(ctx) {
   W.textMode = false;      // следующий клик по графику ставит поле ввода текста
   W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
     onTpSlDrag: (kind, price) => applyTpSl(kind, price, "drag"),
+    onTpSlDragging: (kind, price) => { // плашка PnL следует за линией во время перетаскивания
+      if (W?.pos) W.chartApi.setTpSlTags({ [kind]: tpslTag(W.pos, kind, price) });
+    },
   }, { hideTime: !!ctx.spec.random });
   W.chartApi.setBars(ctx.candles.slice(0, W.idx), ctx.tf.ms);
 
@@ -579,12 +582,34 @@ function redrawPosition() {
   syncTpSlLines();
 }
 
+// Прогноз результата при закрытии на уровне price: нереализ. PnL минус обе комиссии
+function estPnlAt(pos, price) {
+  const feePct = Number(W.ctx.spec.fee_pct) || 0;
+  return eng.uPnL(pos, price) - pos.entryFee - pos.qty * price * feePct / 100;
+}
+
+// Плашка у линии TP/SL: «+12.40$ · +25.3%» — видно, сколько даст уровень
+function tpslTag(pos, kind, price) {
+  if (price == null) return null;
+  const est = estPnlAt(pos, price);
+  const roi = (est / pos.margin) * 100;
+  return {
+    value: price,
+    text: `${kind.toUpperCase()} ${money(est)} · ${roi >= 0 ? "+" : "−"}${fmtRu(Math.abs(roi), 1)}%`,
+    positive: est >= 0,
+  };
+}
+
 // Линии TP/SL + заготовки: не заданные уровни показываются тусклыми линиями
 // в ±3 средних размаха бара от входа (всегда в зоне видимости) — потянул
 // заготовку, и уровень установлен, как на бирже
 function syncTpSlLines() {
   if (!W.pos) return;
   W.chartApi.setTpSl({ tp: W.pos.tpPrice ?? null, sl: W.pos.slPrice ?? null });
+  W.chartApi.setTpSlTags({
+    tp: tpslTag(W.pos, "tp", W.pos.tpPrice ?? null),
+    sl: tpslTag(W.pos, "sl", W.pos.slPrice ?? null),
+  });
   const bars = viewBars().slice(-20);
   const rng = bars.reduce((s, b) => s + (b.high - b.low), 0) / Math.max(1, bars.length);
   const dir = W.pos.side === "long" ? 1 : -1;
@@ -823,11 +848,15 @@ async function applyTpSl(kind, price, source) {
   if (!W?.pos) return;
   const pos = W.pos;
   if (price != null) {
+    // граница — ТЕКУЩАЯ цена, а не вход: стоп можно двигать в безубыток и в профит-лок,
+    // лишь бы уровень не срабатывал мгновенно (как на бирже)
+    const cur = lastBar().close;
     const valid = kind === "tp"
-      ? (pos.side === "long" ? price > pos.entryPrice : price < pos.entryPrice)
-      : (pos.side === "long" ? price < pos.entryPrice : price > pos.entryPrice);
+      ? (pos.side === "long" ? price > cur : price < cur)
+      : (pos.side === "long" ? price < cur : price > cur);
     if (!valid) {
-      notify(`${kind.toUpperCase()} должен быть ${kind === "tp" ? "в прибыльной" : "в убыточной"} стороне от входа`, "error", 5000);
+      const need = (kind === "tp") === (pos.side === "long") ? "выше" : "ниже";
+      notify(`${kind.toUpperCase()} должен быть ${need} текущей цены — иначе сработает мгновенно`, "error", 5000);
       syncTpSlLines(); // вернуть линии и заготовки на место
       if (source !== "drag") renderPanel();
       return;
@@ -888,6 +917,7 @@ function renderPosition(el) {
           value="${p.slPrice != null ? +p.slPrice.toFixed(2) : ""}">
         <input id="ps-slr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"
           value="${p.slPrice != null ? Math.abs(eng.roiFromPrice(p, p.slPrice)).toFixed(1) : ""}">
+        <button class="ovb" id="ps-slbe" title="Стоп в безубыток (цена входа + комиссии)">БУ</button>
         <button class="ovb" id="ps-slx" title="Убрать SL">✕</button></div>
       <div class="muted tphint">уровни можно таскать прямо на графике</div>
     </div>
@@ -918,6 +948,8 @@ function renderPosition(el) {
     };
     el.querySelector(`#ps-${kind}x`).onclick = () => applyTpSl(kind, null, "field");
   }
+  el.querySelector("#ps-slbe").onclick = () =>
+    applyTpSl("sl", eng.breakevenPrice(p, Number(W.ctx.spec.fee_pct)), "field");
   updateTicker();
 }
 
@@ -961,13 +993,54 @@ function updateTicker() {
 
 // ---------- Сделки ----------
 
-async function openTrade(side) {
+// Открытие — только с письменным обоснованием: без «почему вхожу» сделки нет
+function openTrade(side) {
   if (W.pos) return;
   const margin = Number(W.ctx.root.querySelector("#tp-margin")?.value);
   const leverage = Number(W.ctx.root.querySelector("#tp-lev")?.value);
   if (!(margin > 0)) return notify("Укажите маржу", "error");
   if (margin > W.balance) return notify("Маржа больше доступного баланса", "error");
   if (!(leverage >= 1 && leverage <= 100)) return notify("Плечо от 1 до 100", "error");
+  askEntryNote(side);
+}
+
+function askEntryNote(side) {
+  W.ctx.root.querySelector("#sw-notebox")?.remove();
+  const wasPlaying = !!W.timer;
+  stopPlay(); // пока пишешь обоснование, рынок стоит
+  const box = document.createElement("div");
+  box.id = "sw-notebox";
+  box.className = "sim-notebox";
+  box.innerHTML = `
+    <div class="sim-notecard block">
+      <h3>Обоснование входа — ${side === "long" ? "Лонг" : "Шорт"}</h3>
+      <textarea id="sw-note" rows="4" placeholder="Почему захожу: структура, объёмы, уровень, подтверждения…"></textarea>
+      <div class="row" style="gap:10px;justify-content:flex-end;margin-top:10px">
+        <button class="btn ghost" id="sw-note-no">Отмена</button>
+        <button class="btn primary" id="sw-note-ok" disabled>Открыть ${side === "long" ? "Лонг" : "Шорт"}</button>
+      </div>
+    </div>`;
+  W.ctx.root.querySelector(".sim-work").appendChild(box);
+  const ta = box.querySelector("#sw-note");
+  const okBtn = box.querySelector("#sw-note-ok");
+  ta.oninput = () => { okBtn.disabled = ta.value.trim().length < 10; };
+  ta.focus();
+  const closeBox = () => { box.remove(); if (wasPlaying) startPlay(); };
+  box.querySelector("#sw-note-no").onclick = closeBox;
+  box.onclick = (e) => { if (e.target === box) closeBox(); };
+  okBtn.onclick = () => {
+    const note = ta.value.trim();
+    if (note.length < 10) return;
+    box.remove();
+    doOpenTrade(side, note);
+    if (wasPlaying) startPlay();
+  };
+}
+
+async function doOpenTrade(side, entryNote) {
+  if (W.pos) return;
+  const margin = Number(W.ctx.root.querySelector("#tp-margin")?.value);
+  const leverage = Number(W.ctx.root.querySelector("#tp-lev")?.value);
   const bar = lastBar();
   const feePct = Number(W.ctx.spec.fee_pct);
   const base = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
@@ -980,14 +1053,15 @@ async function openTrade(side) {
     liq: eng.liqPrice(pos),
   });
   W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
-  const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой и линиями (§5.4)
+  W.chartApi.setTpSlTags({ tp: tpslTag(pos, "tp", tpPrice), sl: tpslTag(pos, "sl", slPrice) });
+  const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой, линиями и плашками (§5.4)
   let trade;
   try {
     const sessionId = await ensureSession();
     trade = await sapi.insertSimTrade({
       session_id: sessionId, side, margin, leverage, qty: pos.qty,
       entry_ts: iso(pos.entryTs), entry_price: pos.entryPrice, fees: pos.entryFee,
-      tp_price: tpPrice, sl_price: slPrice,
+      tp_price: tpPrice, sl_price: slPrice, entry_note: entryNote,
     });
   } catch (e) {
     W.chartApi.hidePosition();
@@ -1008,6 +1082,12 @@ async function closeTrade(reason, price, ts) {
   const raw = eng.closePosition(pos, { price, ts, feePct: Number(W.ctx.spec.fee_pct), reason });
   const closed = reason === "liq" ? { ...raw, pnl: -pos.margin } : raw; // ликвидация сжигает маржу
 
+  // на скрине выхода видно всё: вход (B/S), TP/SL с плашками и точка выхода
+  W.chartApi.markExit({
+    timestamp: Math.floor(ts / viewTfMs()) * viewTfMs(),
+    value: price,
+    positive: closed.pnl >= 0,
+  });
   const shot = W.chartApi.screenshot(); // автоскрин выхода — линии позиции ещё на графике
   W.chartApi.hidePosition();
   W.closed = [...W.closed, closed];
