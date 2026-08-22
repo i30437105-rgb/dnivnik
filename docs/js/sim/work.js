@@ -1015,6 +1015,7 @@ function askEntryNote(side) {
     <div class="sim-notecard block">
       <h3>Обоснование входа — ${side === "long" ? "Лонг" : "Шорт"}</h3>
       <textarea id="sw-note" rows="4" placeholder="Почему захожу: структура, объёмы, уровень, подтверждения…"></textarea>
+      <div class="muted" id="sw-note-hint" style="margin-top:6px">Минимум 10 символов</div>
       <div class="row" style="gap:10px;justify-content:flex-end;margin-top:10px">
         <button class="btn ghost" id="sw-note-no">Отмена</button>
         <button class="btn primary" id="sw-note-ok" disabled>Открыть ${side === "long" ? "Лонг" : "Шорт"}</button>
@@ -1023,7 +1024,12 @@ function askEntryNote(side) {
   W.ctx.root.querySelector(".sim-work").appendChild(box);
   const ta = box.querySelector("#sw-note");
   const okBtn = box.querySelector("#sw-note-ok");
-  ta.oninput = () => { okBtn.disabled = ta.value.trim().length < 10; };
+  const hint = box.querySelector("#sw-note-hint");
+  ta.oninput = () => {
+    const left = 10 - ta.value.trim().length;
+    okBtn.disabled = left > 0;
+    hint.textContent = left > 0 ? `Минимум 10 символов — ещё ${left}` : "Готово — можно открывать";
+  };
   ta.focus();
   const closeBox = () => { box.remove(); if (wasPlaying) startPlay(); };
   box.querySelector("#sw-note-no").onclick = closeBox;
@@ -1038,41 +1044,47 @@ function askEntryNote(side) {
 }
 
 async function doOpenTrade(side, entryNote) {
-  if (W.pos) return;
-  const margin = Number(W.ctx.root.querySelector("#tp-margin")?.value);
-  const leverage = Number(W.ctx.root.querySelector("#tp-lev")?.value);
-  const bar = lastBar();
-  const feePct = Number(W.ctx.spec.fee_pct);
-  const base = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
-  const { tpPrice, slPrice } = tpSlFromPanel(base);
-  const pos = { ...base, tpPrice, slPrice };
-
-  W.chartApi.showPosition({
-    side, entryPrice: pos.entryPrice,
-    entryTs: Math.floor(pos.entryTs / viewTfMs()) * viewTfMs(), // бар входа на текущем виде
-    liq: eng.liqPrice(pos),
-  });
-  W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
-  W.chartApi.setTpSlTags({ tp: tpslTag(pos, "tp", tpPrice), sl: tpslTag(pos, "sl", slPrice) });
-  const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой, линиями и плашками (§5.4)
-  let trade;
+  // весь путь открытия под try — любая ошибка показывается текстом, а не глотается молча
   try {
-    const sessionId = await ensureSession();
-    trade = await sapi.insertSimTrade({
-      session_id: sessionId, side, margin, leverage, qty: pos.qty,
-      entry_ts: iso(pos.entryTs), entry_price: pos.entryPrice, fees: pos.entryFee,
-      tp_price: tpPrice, sl_price: slPrice, entry_note: entryNote,
+    if (W.pos) return;
+    const margin = Number(W.ctx.root.querySelector("#tp-margin")?.value);
+    const leverage = Number(W.ctx.root.querySelector("#tp-lev")?.value);
+    const bar = lastBar();
+    const feePct = Number(W.ctx.spec.fee_pct);
+    const base = eng.openPosition({ side, margin, leverage, price: bar.close, ts: bar.timestamp, feePct });
+    const { tpPrice, slPrice } = tpSlFromPanel(base);
+    const pos = { ...base, tpPrice, slPrice };
+
+    W.chartApi.showPosition({
+      side, entryPrice: pos.entryPrice,
+      entryTs: Math.floor(pos.entryTs / viewTfMs()) * viewTfMs(), // бар входа на текущем виде
+      liq: eng.liqPrice(pos),
     });
+    W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
+    W.chartApi.setTpSlTags({ tp: tpslTag(pos, "tp", tpPrice), sl: tpslTag(pos, "sl", slPrice) });
+    const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой, линиями и плашками (§5.4)
+    let trade;
+    try {
+      const sessionId = await ensureSession();
+      trade = await sapi.insertSimTrade({
+        session_id: sessionId, side, margin, leverage, qty: pos.qty,
+        entry_ts: iso(pos.entryTs), entry_price: pos.entryPrice, fees: pos.entryFee,
+        tp_price: tpPrice, sl_price: slPrice, entry_note: entryNote,
+      });
+    } catch (e) {
+      W.chartApi.hidePosition();
+      return notify("Не удалось открыть сделку: " + e.message, "error", 6000);
+    }
+    W.pos = { ...pos, tradeId: trade.id };
+    syncTpSlLines(); // заготовки TP/SL для незаданных уровней — выставление с графика
+    saveLive(true);
+    if (shot) sapi.uploadSimShot(trade.id, "entry", shot)
+      .catch((e) => notify("Скрин входа не сохранился: " + e.message, "error", 6000));
+    renderPanel();
   } catch (e) {
-    W.chartApi.hidePosition();
-    return notify("Не удалось открыть сделку: " + e.message, "error", 6000);
+    try { W.chartApi.hidePosition(); } catch { /* график мог не успеть отрисовать позицию */ }
+    notify("Ошибка при открытии сделки: " + e.message, "error", 8000);
   }
-  W.pos = { ...pos, tradeId: trade.id };
-  syncTpSlLines(); // заготовки TP/SL для незаданных уровней — выставление с графика
-  saveLive(true);
-  if (shot) sapi.uploadSimShot(trade.id, "entry", shot)
-    .catch((e) => notify("Скрин входа не сохранился: " + e.message, "error", 6000));
-  renderPanel();
 }
 
 async function closeTrade(reason, price, ts) {
