@@ -622,12 +622,25 @@ function syncTpSlLines() {
 // ---------- Сохранение незавершённой сессии (localStorage) ----------
 // Снапшот пишется на каждом шаге (не чаще раза в секунду) и при важных событиях;
 // удаляется только при «Завершить сессию». Позволяет выйти и продолжить позже.
-const LIVE_KEY = "sim-live";
+// У каждого счёта (стратегии) — свой снапшот: работа в одном не трогает другой.
+const LIVE_PREFIX = "sim-live";
+const liveKey = (accountId) => `${LIVE_PREFIX}-${accountId}`;
 
-export const loadLiveSession = () => {
-  try { return JSON.parse(localStorage.getItem(LIVE_KEY)) ?? null; } catch { return null; }
+export const loadLiveSession = (accountId) => {
+  try {
+    const own = JSON.parse(localStorage.getItem(liveKey(accountId)));
+    if (own) return own;
+    // миграция: старый общий снапшот переезжает на ключ своего счёта
+    const old = JSON.parse(localStorage.getItem(LIVE_PREFIX));
+    if (old) {
+      localStorage.removeItem(LIVE_PREFIX);
+      localStorage.setItem(liveKey(old.accountId), JSON.stringify(old));
+      if (old.accountId === accountId) return old;
+    }
+    return null;
+  } catch { return null; }
 };
-export const dropLiveSession = () => localStorage.removeItem(LIVE_KEY);
+export const dropLiveSession = (accountId) => localStorage.removeItem(liveKey(accountId));
 
 function saveLive(force = false) {
   if (!W?.chartApi) return;
@@ -635,7 +648,7 @@ function saveLive(force = false) {
   if (!force && now - (W.lastSave ?? 0) < 1000) return;
   W.lastSave = now;
   try {
-    localStorage.setItem(LIVE_KEY, JSON.stringify({
+    localStorage.setItem(liveKey(W.ctx.account.id), JSON.stringify({
       v: 1,
       accountId: W.ctx.account.id,
       spec: W.ctx.spec,
@@ -866,9 +879,25 @@ async function applyTpSl(kind, price, source) {
   syncTpSlLines();
   renderPanel();
   saveLive(true);
+  refreshEntryShot(); // на скрине входа должны быть актуальные линии TP/SL
   try {
     await sapi.updateSimTrade(pos.tradeId, { [kind === "tp" ? "tp_price" : "sl_price"]: price });
   } catch (e) { notify("Уровень не сохранился: " + e.message, "error", 6000); }
+}
+
+// Пересъёмка скрина входа после изменения TP/SL: уровни часто ставятся уже после
+// открытия (перетаскиванием заготовок) — иначе на скрине входа их не видно.
+// Дебаунс, чтобы перетаскивание линии не сыпало загрузками в Storage.
+function refreshEntryShot() {
+  if (!W?.pos?.tradeId) return;
+  clearTimeout(W.entryShotTimer);
+  const tradeId = W.pos.tradeId;
+  W.entryShotTimer = setTimeout(async () => {
+    if (!W?.pos || W.pos.tradeId !== tradeId) return; // позиция уже закрыта или другая
+    const shot = await shotAfterDraw();
+    if (shot) sapi.uploadSimShot(tradeId, "entry", shot)
+      .catch(() => { /* не критично — остаётся скрин момента открытия */ });
+  }, 1500);
 }
 
 function updatePreview() {
@@ -1043,6 +1072,16 @@ function askEntryNote(side) {
   };
 }
 
+// klinecharts рисует оверлеи на следующем кадре — скрин снимается после отрисовки,
+// иначе на нём нет свежих линий входа/TP/SL (вход) и метки «Выход» (закрытие)
+async function shotAfterDraw() {
+  await Promise.race([
+    new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+    new Promise((r) => setTimeout(r, 250)), // страховка, если кадры не приходят
+  ]);
+  return W?.chartApi ? W.chartApi.screenshot() : null;
+}
+
 async function doOpenTrade(side, entryNote) {
   // весь путь открытия под try — любая ошибка показывается текстом, а не глотается молча
   try {
@@ -1062,7 +1101,7 @@ async function doOpenTrade(side, entryNote) {
     });
     W.chartApi.setTpSl({ tp: tpPrice, sl: slPrice });
     W.chartApi.setTpSlTags({ tp: tpslTag(pos, "tp", tpPrice), sl: tpslTag(pos, "sl", slPrice) });
-    const shot = W.chartApi.screenshot(); // автоскрин входа — с разметкой, линиями и плашками (§5.4)
+    const shot = await shotAfterDraw(); // автоскрин входа — с линиями входа/TP/SL и плашками (§5.4)
     let trade;
     try {
       const sessionId = await ensureSession();
@@ -1100,7 +1139,7 @@ async function closeTrade(reason, price, ts) {
     value: price,
     positive: closed.pnl >= 0,
   });
-  const shot = W.chartApi.screenshot(); // автоскрин выхода — линии позиции ещё на графике
+  const shot = await shotAfterDraw(); // автоскрин выхода — линии позиции ещё на графике
   W.chartApi.hidePosition();
   W.closed = [...W.closed, closed];
   W.balance = W.balance + closed.pnl;
@@ -1144,7 +1183,7 @@ async function endSession() {
 
 function cleanup(keepLive) {
   stopPlay();
-  if (!keepLive) dropLiveSession(); // завершённая сессия продолжению не подлежит
+  if (!keepLive) dropLiveSession(W.ctx.account.id); // завершённая сессия продолжению не подлежит
   window.removeEventListener("resize", W.onResize);
   window.removeEventListener("beforeunload", W.onUnload);
   document.removeEventListener("keydown", W.onKey);

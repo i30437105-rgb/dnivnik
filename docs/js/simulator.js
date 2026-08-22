@@ -88,16 +88,16 @@ async function renderHome() {
   body.querySelector("#sim-resume") && (body.querySelector("#sim-resume").onclick = resumeSession);
   body.querySelector("#sim-resume-del") && (body.querySelector("#sim-resume-del").onclick = async () => {
     if (!(await confirmToast("Удалить сохранённую сессию? Продолжить её будет нельзя.", "Удалить"))) return;
-    dropLiveSession();
+    dropLiveSession(account.id);
     renderHome();
   });
   bindSetup(body.querySelector(".sim-setup"));
   renderStats(body.querySelector("#sim-stats"), account);
 }
 
-// Блок «Незавершённая сессия» — если есть сохранённая для текущего счёта
+// Блок «Незавершённая сессия» — у каждого счёта своя сохранённая сессия
 function liveResumeBlock() {
-  const live = loadLiveSession();
+  const live = loadLiveSession(account.id);
   if (!live || live.accountId !== account.id) return "";
   const tfLabel = tfById(live.spec.timeframe)?.label ?? live.spec.timeframe;
   const posTxt = live.pos ? ` · открыта ${live.pos.side === "long" ? "лонг" : "шорт"}-позиция` : "";
@@ -114,7 +114,7 @@ function liveResumeBlock() {
 
 // Восстановление сессии из снапшота: свечи и история загружаются заново по датам
 async function resumeSession() {
-  const live = loadLiveSession();
+  const live = loadLiveSession(account.id);
   if (!live) return renderHome();
   const spec = live.spec;
   const tf = tfById(spec.timeframe);
