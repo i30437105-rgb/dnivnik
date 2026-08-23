@@ -201,11 +201,16 @@ export function mountWork(ctx) {
   W.selectedOv = null;
   W.drawingActive = false; // идёт постановка точек инструмента
   W.textMode = false;      // следующий клик по графику ставит поле ввода текста
+  W.riskOn = false;        // риск-калькулятор: вход от заданного риска и стопа на графике
+  W.riskStop = null;       // цена линии риск-стопа
   W.chartApi = createSimChart(ctx.root.querySelector("#sim-chart"), {
     onTpSlDrag: (kind, price) => applyTpSl(kind, price, "drag"),
     onTpSlDragging: (kind, price) => { // плашка PnL следует за линией во время перетаскивания
       if (W?.pos) W.chartApi.setTpSlTags({ [kind]: tpslTag(W.pos, kind, price) });
     },
+    // линия стопа риск-калькулятора: расчёт позиции обновляется прямо при перетаскивании
+    onRiskDrag: (price) => { if (W) { W.riskStop = price; recalcRisk(); } },
+    onRiskDragging: (price) => { if (W) { W.riskStop = price; recalcRisk(); } },
   }, { hideTime: !!ctx.spec.random });
   W.chartApi.setBars(ctx.candles.slice(0, W.idx), ctx.tf.ms);
 
@@ -785,6 +790,16 @@ function renderPanel() {
         <input id="tp-slr" type="number" step="any" min="0" placeholder="ROI %" inputmode="decimal"></div>
       <div class="muted tphint">% — ROI от маржи, как на Bybit. Цена уточняется по стороне при входе.</div>
     </div>
+    <label class="sim-tpslchk"><input type="checkbox" id="tp-risk"> Вход от риска — стоп на графике</label>
+    <div id="tp-riskbox" class="sim-tpslbox num" hidden>
+      <label class="fld"><span>Риск на сделку, $</span>
+        <input id="tp-riskv" type="number" step="any" min="0" inputmode="decimal"></label>
+      <div class="chips">${[0.5, 1, 2].map((p) => `<button class="chip" data-rpct="${p}">${fmtRu(p, 1)}% от баланса</button>`).join("")}</div>
+      <div class="sim-preview num" id="tp-riskcalc"></div>
+      <button id="tp-riskgo" class="btn buy" style="width:100%;margin-top:8px" disabled>Войти по расчёту</button>
+      <div class="muted tphint">Потяните оранжевую линию стопа на графике: стоп ниже цены — лонг, выше — шорт.
+        Размер позиции считается от риска с учётом комиссий входа и выхода; стоп сразу выставляется при входе.</div>
+    </div>
     <div class="row sim-openrow">
       <button id="tp-long" class="btn buy">Открыть Лонг</button>
       <button id="tp-short" class="btn sell">Открыть Шорт</button>
@@ -832,7 +847,117 @@ function renderPanel() {
 
   el.querySelector("#tp-long").onclick = () => openTrade("long");
   el.querySelector("#tp-short").onclick = () => openTrade("short");
+
+  // Риск-калькулятор: вход от заданного риска и стопа, поставленного линией на графике
+  const riskInp = el.querySelector("#tp-riskv");
+  riskInp.value = localStorage.getItem("sim-risk") || String(Math.max(1, Math.round(W.balance) / 100));
+  riskInp.oninput = () => { localStorage.setItem("sim-risk", riskInp.value); recalcRisk(); };
+  el.querySelectorAll(".chip[data-rpct]").forEach((c) => c.onclick = () => {
+    riskInp.value = String(Math.max(0.01, Math.round(W.balance * Number(c.dataset.rpct)) / 100));
+    localStorage.setItem("sim-risk", riskInp.value);
+    recalcRisk();
+  });
+  el.querySelector("#tp-risk").onchange = (e) => setRiskMode(e.target.checked);
+  el.querySelector("#tp-riskgo").onclick = riskEnter;
+  if (W.riskOn) { // панель перерисована, а режим был включён — восстановить вид
+    el.querySelector("#tp-risk").checked = true;
+    el.querySelector("#tp-riskbox").hidden = false;
+    recalcRisk();
+  }
   updatePreview();
+}
+
+// ---------- Риск-калькулятор ----------
+
+function setRiskMode(on) {
+  W.riskOn = on;
+  const box = W.ctx.root.querySelector("#tp-riskbox");
+  if (box) box.hidden = !on;
+  if (!on) {
+    W.chartApi.setRiskLine(null);
+    W.riskStop = null;
+    return;
+  }
+  if (W.riskStop == null) {
+    // стартовое положение линии — ниже цены на 2 средних размаха бара (как заготовки TP/SL)
+    const bars = viewBars().slice(-30);
+    const cur = lastBar().close;
+    const range = bars.length
+      ? bars.reduce((s, b) => s + (b.high - b.low), 0) / bars.length
+      : cur * 0.005;
+    W.riskStop = cur - 2 * range;
+  }
+  W.chartApi.setRiskLine(W.riskStop);
+  recalcRisk();
+}
+
+// Размер позиции от риска: риск покрывает ход до стопа ПЛЮС комиссии входа и выхода,
+// как в Pine-калькуляторе: qty = риск / (дистанция + вход×f + стоп×f)
+function riskCalc() {
+  if (!W?.riskOn || W.riskStop == null) return null;
+  const entry = lastBar().close;
+  const stop = W.riskStop;
+  const risk = Number(W.ctx.root.querySelector("#tp-riskv")?.value);
+  const lev = Number(W.ctx.root.querySelector("#tp-lev")?.value) || 1;
+  const f = (Number(W.ctx.spec.fee_pct) || 0) / 100;
+  const dist = Math.abs(entry - stop);
+  if (!(risk > 0) || !(dist > 0)) return { bad: true };
+  const side = stop < entry ? "long" : "short";
+  const qty = risk / (dist + entry * f + stop * f);
+  const notional = qty * entry;
+  const margin = notional / lev;
+  const liq = side === "long" ? entry * (1 - 0.95 / lev) : entry * (1 + 0.95 / lev);
+  const liqBeforeStop = side === "long" ? stop < liq : stop > liq;
+  return { entry, stop, risk, side, qty, notional, margin, lev, liqBeforeStop, overBalance: margin > W.balance };
+}
+
+function recalcRisk() {
+  if (!W?.riskOn) return;
+  const out = W.ctx.root.querySelector("#tp-riskcalc");
+  const btn = W.ctx.root.querySelector("#tp-riskgo");
+  if (!out || !btn) return;
+  const c = riskCalc();
+  if (!c || c.bad) {
+    out.innerHTML = `<span class="muted">Задайте риск и потяните линию стопа</span>`;
+    btn.disabled = true;
+    W.chartApi.setRiskTag(null);
+    return;
+  }
+  W.chartApi.setRiskTag({ value: c.stop, text: `Стоп · риск −${money(c.risk).replace("−", "")}` });
+  const sideRu = c.side === "long" ? "Лонг" : "Шорт";
+  const warn = c.overBalance
+    ? `<div class="neg">Маржа больше баланса — уменьшите риск или увеличьте плечо</div>`
+    : c.liqBeforeStop
+      ? `<div class="neg">При плече ×${c.lev} ликвидация наступит раньше стопа — уменьшите плечо</div>`
+      : "";
+  out.innerHTML = `
+    <div><span class="lbl">Направление</span><span class="${c.side === "long" ? "pos" : "neg"}">${sideRu} <span class="muted">(стоп ${c.side === "long" ? "ниже" : "выше"} цены)</span></span></div>
+    <div><span class="lbl">Стоимость</span><span>${money(c.notional)}</span></div>
+    <div><span class="lbl">Кол-во</span><span>${fmtRu(c.qty, c.qty >= 100 ? 1 : 4)}</span></div>
+    <div><span class="lbl">Маржа ×${c.lev}</span><span>${money(c.margin)}</span></div>
+    ${warn}`;
+  btn.disabled = c.overBalance || c.liqBeforeStop;
+  btn.className = `btn ${c.side === "long" ? "buy" : "sell"}`;
+  btn.style.cssText = "width:100%;margin-top:8px";
+  btn.textContent = `Войти ${sideRu} · маржа ${money(c.margin)}`;
+}
+
+// Вход по расчёту: маржа и стоп подставляются в стандартную панель — дальше
+// обычный путь открытия (обоснование входа, SL сразу на линии стопа)
+function riskEnter() {
+  const c = riskCalc();
+  if (!c || c.bad) return;
+  if (c.overBalance) return notify("Маржа больше баланса — уменьшите риск или увеличьте плечо", "error");
+  if (c.liqBeforeStop) return notify("Ликвидация наступит раньше стопа — уменьшите плечо", "error");
+  const el = W.ctx.root;
+  const margin = Math.min(Math.ceil(c.margin * 100) / 100, Math.floor(W.balance * 100) / 100);
+  el.querySelector("#tp-margin").value = String(margin);
+  const g = el.querySelector("#tp-tpsl");
+  if (!g.checked) { g.checked = true; el.querySelector("#tp-tpslbox").hidden = false; }
+  el.querySelector("#tp-slp").value = String(c.stop);
+  W.tpslSrc.sl = "price";
+  updatePreview();
+  openTrade(c.side);
 }
 
 // TP/SL из полей панели по факту стороны: roi-ввод пересчитывается, цена берётся как есть
@@ -915,6 +1040,7 @@ function updatePreview() {
     <div><span class="lbl">Стоимость</span><span>${money(margin * lev)}</span></div>
     <div><span class="lbl">Кол-во</span><span>${fmtRu(qty, qty >= 100 ? 1 : 4)}</span></div>
     <div><span class="lbl">Ликв. лонг / шорт</span><span>${px(liqL, price)} / ${px(liqS, price)}</span></div>`;
+  recalcRisk(); // плечо участвует в расчёте маржи риск-калькулятора
 }
 
 function renderPosition(el) {
@@ -1001,6 +1127,7 @@ function updateTicker() {
   if (!W) return;
   const prog = W.ctx.root.querySelector("#sw-progress");
   if (prog) prog.textContent = `бар ${Math.max(0, W.idx - W.preLen)} из ${W.ctx.candles.length - W.preLen}`;
+  recalcRisk(); // вход по рынку: цена входа = текущая, расчёт живёт с каждым баром
   if (!W.pos) return;
   const price = lastBar().close;
   const u = eng.uPnL(W.pos, price);
@@ -1115,6 +1242,7 @@ async function doOpenTrade(side, entryNote) {
       return notify("Не удалось открыть сделку: " + e.message, "error", 6000);
     }
     W.pos = { ...pos, tradeId: trade.id };
+    if (W.riskOn) { W.riskOn = false; W.riskStop = null; W.chartApi.setRiskLine(null); } // стоп теперь настоящий SL
     syncTpSlLines(); // заготовки TP/SL для незаданных уровней — выставление с графика
     saveLive(true);
     if (shot) sapi.uploadSimShot(trade.id, "entry", shot)

@@ -538,7 +538,21 @@ export function createSimChart(el, hooks = {}, opts = {}) {
       close: "Закр: ", volume: "Объём: ", turnover: "Оборот: ", change: "Изм: ",
     });
   } catch { /* локаль не критична */ }
-  const chart = k.init(el, { locale: "ru-RU" });
+  // Случайная точка: вместо полного скрытия оси времени — обезличенный формат
+  // «день недели + часы»: смену суток и время видно, календарную дату не угадать
+  const anonTime = opts.hideTime ? (() => {
+    let f;
+    try {
+      f = new Intl.DateTimeFormat("ru-RU", { weekday: "short", hour: "2-digit", minute: "2-digit", timeZone: state.tz });
+    } catch {
+      f = new Intl.DateTimeFormat("ru-RU", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    }
+    return (ts) => f.format(new Date(ts)).replace(",", "");
+  })() : null;
+  const chart = k.init(el, {
+    locale: "ru-RU",
+    ...(anonTime ? { customApi: { formatDate: (dtf, ts) => anonTime(ts) } } : {}),
+  });
 
   const up = css("--chart-candle-up") || "#4cc47a";
   const down = css("--chart-candle-down") || "#f0553f";
@@ -588,11 +602,11 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   });
   try { chart.setTimezone(state.tz); } catch { /* не критично */ }
   if (opts.hideTime) {
-    // случайная точка: дата скрыта до конца сессии — без оси времени и «Время» в тултипе
+    // случайная точка: календарная дата скрыта до конца сессии, но часы и смена
+    // суток видны — ось, кроссхэйр и тултип показывают «день недели HH:mm» (anonTime)
     chart.setStyles({
-      xAxis: { tickText: { show: false } },
-      crosshair: { vertical: { text: { show: false } } },
       candle: { tooltip: { custom: [
+        { title: "Время: ", value: "{time}" },
         { title: "Откр: ", value: "{open}" }, { title: "Макс: ", value: "{high}" },
         { title: "Мин: ", value: "{low}" }, { title: "Закр: ", value: "{close}" },
         { title: "Объём: ", value: "{volume}" },
@@ -612,6 +626,8 @@ export function createSimChart(el, hooks = {}, opts = {}) {
   const ghost = { tp: null, sl: null }; // заготовки TP/SL — потянул и уровень установлен
   const tpslTag = { tp: null, sl: null }; // плашки «сколько будет прибыли/убытка» у линий TP/SL
   let pnlId = null;         // плашка uPnL у линии входа
+  let riskLine = null;      // линия стопа риск-калькулятора (до входа)
+  let riskTagId = null;     // плашка риска у этой линии
 
   // Канон разметки — свой реестр: точки хранятся как (timestamp, value).
   // klinecharts привязывает оверлеи к индексу бара ТЕКУЩЕГО вида, поэтому при
@@ -1028,6 +1044,48 @@ export function createSimChart(el, hooks = {}, opts = {}) {
         } else if (value != null && ghost[kind]) {
           chart.overrideOverlay({ id: ghost[kind], points: [{ value }] });
         }
+      }
+    },
+
+    // Линия стопа риск-калькулятора: оранжевая, перетаскиваемая (onRiskDrag/onRiskDragging).
+    // Живёт до входа в рынок — по ней считается размер позиции от заданного риска.
+    setRiskLine(value) {
+      if (value == null) {
+        if (riskLine) { chart.removeOverlay({ id: riskLine }); riskLine = null; }
+        this.setRiskTag(null);
+        return;
+      }
+      if (riskLine && chart.getOverlayById?.(riskLine)) {
+        chart.overrideOverlay({ id: riskLine, points: [{ value }] });
+      } else {
+        riskLine = chart.createOverlay({
+          name: "priceLine", points: [{ value }],
+          styles: {
+            line: { color: "#e0a83a", style: "dashed" },
+            text: { backgroundColor: "#e0a83a", color: "#141210" },
+          },
+          onPressedMoving: (e) => {
+            const v = e.overlay.points?.[0]?.value;
+            if (v != null) hooks.onRiskDragging?.(v);
+          },
+          onPressedMoveEnd: (e) => {
+            const v = e.overlay.points?.[0]?.value;
+            if (v != null) hooks.onRiskDrag?.(v);
+          },
+        });
+      }
+    },
+    // Плашка у линии риск-стопа: «Стоп · риск −$X» ({value, text} | null)
+    setRiskTag(tag) {
+      if (!tag) {
+        if (riskTagId) { chart.removeOverlay({ id: riskTagId }); riskTagId = null; }
+        return;
+      }
+      const data = { text: tag.text, bg: "rgba(224,168,58,.92)" };
+      if (riskTagId && chart.getOverlayById?.(riskTagId)) {
+        chart.overrideOverlay({ id: riskTagId, points: [{ value: tag.value }], extendData: data });
+      } else {
+        riskTagId = chart.createOverlay({ name: "pnlTag", lock: true, points: [{ value: tag.value }], extendData: data });
       }
     },
 
