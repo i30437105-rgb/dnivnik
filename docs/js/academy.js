@@ -2,6 +2,7 @@
 // (редактируемый справочник: свои ссылки/заметки/карточки, хранение — user_settings.academy).
 
 import { initWaves } from "./waves.js";
+import { renderTape } from "./tape.js";
 import { saveSettings } from "./api.js";
 import { state, esc } from "./util.js";
 
@@ -126,6 +127,7 @@ export function initAcademy(container) {
       <button class="chip" data-at="waves">Волны Эллиотта</button>
       <button class="chip" data-at="mentors">Наставники</button>
       <button class="chip" data-at="schemes">Схемы</button>
+      <button class="chip" data-at="tape">Чтение ленты</button>
     </nav>
     <div id="ac-pane"></div>`;
   root.querySelectorAll("#ac-tabs .chip").forEach((b) => b.onclick = () => show(b.dataset.at));
@@ -141,6 +143,8 @@ function show(tab) {
     pane.querySelector(".pagehead")?.remove(); // у памятки свой заголовок — в академии он лишний
   } else if (tab === "schemes") {
     renderSchemes(pane);
+  } else if (tab === "tape") {
+    renderTape(pane);
   } else {
     renderMentors(pane);
   }
